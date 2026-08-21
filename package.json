@@ -1,0 +1,149 @@
+{
+    "name": "ai-turn-changes",
+    "displayName": "AI Turn Changes Visualizer",
+    "description": "Visualize and browse code changes made by terminal-based AI agents like Claude or Codex, organized by turns.",
+    "version": "0.0.1",
+    "publisher": "seanz-hahaha",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "keywords": [
+        "AI Turn",
+        "Window",
+        "DiffEditor"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/zzjha-cn/auto-themeri-turn-changes.git"
+    },
+    "activationEvents": [],
+    "main": "./out/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "ai-turn-changes-sidebar",
+                    "title": "AI Turn Changes",
+                    "icon": "$(git-compare)"
+                }
+            ]
+        },
+        "views": {
+            "ai-turn-changes-sidebar": [
+                {
+                    "id": "turnChangesView",
+                    "name": "Turn Explorer",
+                    "icon": "$(git-compare)"
+                }
+            ]
+        },
+        "customEditors": [
+            {
+                "viewType": "turnChanges.diffEditor",
+                "displayName": "AI Turn Diff",
+                "selector": [
+                    {
+                        "filenamePattern": "*.turn-diff"
+                    }
+                ],
+                "priority": "default"
+            }
+        ],
+        "configuration": {
+            "title": "AI Turn Changes",
+            "properties": {
+                "aiTurnChanges.diffEditorTheme": {
+                    "type": "string",
+                    "enum": [
+                        "dark",
+                        "light"
+                    ],
+                    "default": "dark",
+                    "description": "Default background theme for the AI Turn diff editor. Temporary switching inside the diff editor does not change this setting."
+                }
+            }
+        },
+        "commands": [
+            {
+                "command": "turnChanges.startManualTurn",
+                "title": "AI Turn: Start Manual Turn",
+                "category": "AI Turn Changes"
+            },
+            {
+                "command": "turnChanges.finishManualTurn",
+                "title": "AI Turn: Finish Manual Turn",
+                "category": "AI Turn Changes"
+            },
+            {
+                "command": "turnChanges.discardTurn",
+                "title": "AI Turn: Discard Active Turn",
+                "category": "AI Turn Changes"
+            },
+            {
+                "command": "turnChanges.bindTerminal",
+                "title": "AI Turn: Bind Active Terminal",
+                "category": "AI Turn Changes"
+            },
+            {
+                "command": "turnChanges.unbindTerminal",
+                "title": "AI Turn: Unbind Terminal",
+                "category": "AI Turn Changes"
+            },
+            {
+                "command": "turnChanges.setManualMode",
+                "title": "AI Turn: Switch to Manual Mode",
+                "category": "AI Turn Changes"
+            },
+            {
+                "command": "turnChanges.setAutoMode",
+                "title": "AI Turn: Switch to Automatic Mode",
+                "category": "AI Turn Changes"
+            },
+            {
+                "command": "turnChanges.mergeTurnDown",
+                "title": "AI Turn: Merge Selected Turn Down",
+                "category": "AI Turn Changes"
+            },
+            {
+                "command": "turnChanges.selectTurn",
+                "title": "AI Turn: Select Turn",
+                "category": "AI Turn Changes",
+                "icon": "$(target)"
+            },
+            {
+                "command": "turnChanges.removeTurn",
+                "title": "AI Turn: Remove Selected Turn",
+                "category": "AI Turn Changes",
+                "icon": "$(trash)"
+            }
+        ],
+        "menus": {
+            "view/item/context": [
+                {
+                    "command": "turnChanges.selectTurn",
+                    "when": "view == turnChangesView && viewItem == turnNode",
+                    "group": "inline@1"
+                }
+            ]
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "package": "vsce package",
+        "publish": "vsce publish",
+        "pretest": "npm run compile",
+        "test": "node ./out/test/runTest.js"
+    },
+    "devDependencies": {
+        "@types/diff": "^7.0.2",
+        "@types/node": "^18.0.0",
+        "@types/vscode": "^1.80.0",
+        "diff": "^9.0.0",
+        "typescript": "^5.0.4"
+    }
+}

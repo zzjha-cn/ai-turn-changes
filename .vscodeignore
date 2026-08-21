@@ -1,0 +1,7 @@
+public/image*.png
+src/
+.vscode
+README.*.md
+.DS_Store
+scripts/
+docs/
