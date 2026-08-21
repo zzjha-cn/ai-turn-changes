@@ -17,7 +17,7 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/zzjha-cn/auto-themeri-turn-changes.git"
+        "url": "https://github.com/zzjha-cn/ai-turn-changes.git"
     },
     "activationEvents": [],
     "main": "./out/extension.js",
@@ -139,11 +139,14 @@
         "pretest": "npm run compile",
         "test": "node ./out/test/runTest.js"
     },
+    "dependencies": {
+        "diff": "^9.0.0"
+    },
     "devDependencies": {
         "@types/diff": "^7.0.2",
         "@types/node": "^18.0.0",
         "@types/vscode": "^1.80.0",
-        "diff": "^9.0.0",
+        "@vscode/vsce": "^3.9.2",
         "typescript": "^5.0.4"
     }
 }
