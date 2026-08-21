@@ -59,8 +59,6 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
 
     if (element instanceof TurnNode) {
       return [
-        new TurnActionNode('Merge Down', 'turnChanges.mergeTurnDown', 'combine', element.record),
-        new TurnActionNode('Remove', 'turnChanges.removeTurn', 'trash', element.record),
         ...element.record.changes.map(change => new FileNode(change, element.record))
       ];
     }

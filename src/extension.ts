@@ -49,6 +49,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const quietDetector = new QuietWindowBoundaryDetector(1200, 1000);
   const terminalMonitor = new TerminalMonitor(terminalBinding, quietDetector);
   const fileWatchService = new FileWatchService(quietDetector, gitService);
+  turnManager.setMode('auto', quietDetector);
 
   // 3. 初始化 UI 与高亮组件
   const treeViewProvider = new TreeViewProvider(turnManager, terminalBinding);

@@ -6,6 +6,7 @@ export class TerminalMonitor {
   private bindingService: TerminalBindingService;
   private detector: TurnBoundaryDetector;
   private disposables: vscode.Disposable[] = [];
+  private terminalTailBuffer = new Map<string, string>();
 
   constructor(bindingService: TerminalBindingService, detector: TurnBoundaryDetector) {
     this.bindingService = bindingService;
@@ -24,10 +25,10 @@ export class TerminalMonitor {
       const startExecutionDisposable = (vscode.window as any).onDidStartTerminalShellExecution((e: any) => {
         const boundTerminal = this.bindingService.getBoundTerminal();
         if (boundTerminal && e.terminal === boundTerminal) {
-          // 产生一个微小事件，告知检测器终端开始活动了
           this.detector.onTerminalOutput({
             terminal: e.terminal,
-            data: `[Command Started]: ${e.execution?.commandLine?.value || ''}`
+            data: `[Command Started]: ${e.execution?.commandLine?.value || ''}`,
+            kind: 'commandStart'
           });
         }
       });
@@ -38,10 +39,10 @@ export class TerminalMonitor {
       const endExecutionDisposable = (vscode.window as any).onDidEndTerminalShellExecution((e: any) => {
         const boundTerminal = this.bindingService.getBoundTerminal();
         if (boundTerminal && e.terminal === boundTerminal) {
-          // 终端命令执行结束，触发静默检测的起点
           this.detector.onTerminalOutput({
             terminal: e.terminal,
-            data: '[Command Ended]'
+            data: '[Command Ended]',
+            kind: 'commandEnd'
           });
         }
       });
@@ -53,9 +54,11 @@ export class TerminalMonitor {
     const writeDataDisposable = (vscode.window as any).onDidWriteTerminalData?.((e: any) => {
       const boundTerminal = this.bindingService.getBoundTerminal();
       if (boundTerminal && e.terminal === boundTerminal) {
+        const kind = this.classifyTerminalData(e.terminal, e.data);
         this.detector.onTerminalOutput({
           terminal: e.terminal,
-          data: e.data
+          data: e.data,
+          kind
         });
       }
     });
@@ -66,6 +69,60 @@ export class TerminalMonitor {
   }
 
   public dispose(): void {
+    this.terminalTailBuffer.clear();
     this.disposables.forEach(d => d.dispose());
+  }
+
+  private classifyTerminalData(terminal: vscode.Terminal, data: string): 'output' | 'prompt' | 'awaitingInput' | 'continuationPrompt' {
+    const key = this.getTerminalKey(terminal);
+    const previous = this.terminalTailBuffer.get(key) || '';
+    const combined = (previous + data).slice(-4000);
+    this.terminalTailBuffer.set(key, combined);
+
+    const normalized = combined.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
+    const lines = normalized.split(/\r?\n/);
+    const tailLine = (lines[lines.length - 1] || '').trimEnd();
+    const recentTail = normalized.slice(-600);
+
+    if (this.isAwaitingInput(recentTail, tailLine)) {
+      return 'awaitingInput';
+    }
+    if (this.isContinuationPrompt(tailLine)) {
+      return 'continuationPrompt';
+    }
+    if (this.isShellPrompt(tailLine)) {
+      return 'prompt';
+    }
+    return 'output';
+  }
+
+  private isAwaitingInput(recentTail: string, tailLine: string): boolean {
+    const promptPatterns = [
+      /(?:^|\n).*\b(?:allow|approve|grant permission|proceed|continue|confirm|apply)\b[^\n]*\?/i,
+      /(?:^|\n).*\b(?:select|choose|pick)\b[^\n]*\b(?:option|an option|one)\b/i,
+      /(?:^|\n).*\bpress\s+(?:enter|return)\s+to\s+(?:continue|confirm)\b/i,
+      /(?:^|\n).*\b(?:waiting for input|awaiting input|requires confirmation)\b/i,
+      /(?:^|\n).*\[(?:y\/n|yes\/no|Y\/n|y\/N|1\/2|1-9)\]\s*$/i,
+      /(?:^|\n).*\((?:y\/n|yes\/no|Y\/n|y\/N)\)\s*$/i,
+      /(?:^|\n).*[:：]\s*$/
+    ];
+    if (promptPatterns.some(pattern => pattern.test(recentTail))) {
+      return true;
+    }
+    return /(?:^|\s)(?:y\/n|yes\/no)\s*\??\s*$/i.test(tailLine);
+  }
+
+  private isContinuationPrompt(tailLine: string): boolean {
+    return /(?:^|\s)(?:dquote|quote|bquote|pipe|cmdsubst|heredoc)>\s*$/.test(tailLine);
+  }
+
+  private isShellPrompt(tailLine: string): boolean {
+    return /(?:^|\s)(?:\$|%|#|❯)\s*$/.test(tailLine)
+      || /^PS [^\r\n>]+>\s*$/.test(tailLine)
+      || /(?:^|\s)(?:>|➜)\s*$/.test(tailLine);
+  }
+
+  private getTerminalKey(terminal: vscode.Terminal): string {
+    return `${terminal.name}:${terminal.creationOptions?.name || ''}`;
   }
 }

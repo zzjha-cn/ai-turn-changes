@@ -593,11 +593,43 @@ export class TurnDiffEditorProvider implements vscode.CustomTextEditorProvider, 
       padding: 6px 0;
     }
     .pair-wrapper {
+      position: relative;
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid rgba(255,255,255,0.05);
       background: rgba(255,255,255,0.01);
       box-shadow: 0 16px 36px rgba(0,0,0,0.18);
+    }
+    .pair-jump {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid rgba(96,165,250,0.38);
+      background: rgba(37,99,235,0.34);
+      color: rgba(239,246,255,0.98);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      box-shadow: 0 10px 24px rgba(37,99,235,0.22);
+      transition: background 120ms ease, border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+    }
+    .pair-jump:hover {
+      background: rgba(59,130,246,0.52);
+      border-color: rgba(147,197,253,0.72);
+      box-shadow: 0 14px 30px rgba(59,130,246,0.3);
+      transform: translateY(-1px);
+    }
+    body[data-theme="light"] .pair-jump {
+      background: rgba(37,99,235,0.14);
+      color: rgba(29,78,216,0.96);
+      border-color: rgba(37,99,235,0.22);
+      box-shadow: 0 10px 24px rgba(37,99,235,0.12);
     }
     .pair-connector {
       height: 10px;
@@ -772,7 +804,9 @@ export class TurnDiffEditorProvider implements vscode.CustomTextEditorProvider, 
       const oldHtml = pair.oldBlock ? renderOldBlock(pair.oldBlock) : '';
       const newHtml = pair.newBlock ? renderNewBlock(pair.newBlock) : '';
       const connector = pair.oldBlock && pair.newBlock ? '<div class="pair-connector"></div>' : '';
+      const jumpButton = '<button class="pair-jump" data-anchor-line="' + pair.anchorLine + '" title="Next change">↓</button>';
       return '<div class="injected"><div class="pair-wrapper">' +
+        jumpButton +
         '<div class="pair-summary"><span>Paired change · Line ' + pair.anchorLine + '</span><span>' + pair.summary + '</span></div>' +
         oldHtml + connector + newHtml +
       '</div></div>';
@@ -786,9 +820,22 @@ export class TurnDiffEditorProvider implements vscode.CustomTextEditorProvider, 
         '<div class="cell">' + (line.text ? text : '&nbsp;') + '</div>' +
       '</div>';
       if (line.kind === 'paired-block-anchor' && line.pair) {
-        return renderPair(line.pair);
+        return row + renderPair(line.pair);
       }
       return row;
+    }
+
+    function activateChange(changeRows, nextIndex) {
+      if (changeRows.length === 0) {
+        return;
+      }
+      const normalizedIndex = ((nextIndex % changeRows.length) + changeRows.length) % changeRows.length;
+      const nextRow = changeRows[normalizedIndex];
+      document.querySelectorAll('.row.is-active').forEach(active => active.classList.remove('is-active'));
+      nextRow.classList.add('is-active');
+      nextRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      state.changeIndex = normalizedIndex;
+      vscode.setState(state);
     }
 
     function render() {
@@ -824,13 +871,19 @@ export class TurnDiffEditorProvider implements vscode.CustomTextEditorProvider, 
           return;
         }
         const currentIndex = typeof state.changeIndex === 'number' ? state.changeIndex : -1;
-        const nextIndex = (currentIndex + 1) % changeRows.length;
-        const nextRow = changeRows[nextIndex];
-        document.querySelectorAll('.row.is-active').forEach(active => active.classList.remove('is-active'));
-        nextRow.classList.add('is-active');
-        nextRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        state.changeIndex = nextIndex;
-        vscode.setState(state);
+        activateChange(changeRows, currentIndex + 1);
+      });
+
+      document.querySelectorAll('.pair-jump').forEach(button => {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          if (changeRows.length === 0) {
+            return;
+          }
+          const anchorLine = Number(button.getAttribute('data-anchor-line') || '0');
+          const currentIndex = changeRows.findIndex(row => Number(row.getAttribute('data-line') || '0') === anchorLine);
+          activateChange(changeRows, currentIndex + 1);
+        });
       });
 
       document.getElementById('open-source').addEventListener('click', () => {
@@ -850,13 +903,13 @@ export class TurnDiffEditorProvider implements vscode.CustomTextEditorProvider, 
       document.querySelectorAll('.row[data-line]').forEach(element => {
         element.classList.add('line-clickable');
         element.addEventListener('click', () => {
-          document.querySelectorAll('.row.is-active').forEach(active => active.classList.remove('is-active'));
-          element.classList.add('is-active');
           const changedIndex = changeRows.indexOf(element);
           if (changedIndex >= 0) {
-            state.changeIndex = changedIndex;
-            vscode.setState(state);
+            activateChange(changeRows, changedIndex);
+            return;
           }
+          document.querySelectorAll('.row.is-active').forEach(active => active.classList.remove('is-active'));
+          element.classList.add('is-active');
         });
         element.addEventListener('dblclick', () => {
           const value = Number(element.getAttribute('data-line') || '0');
@@ -865,6 +918,10 @@ export class TurnDiffEditorProvider implements vscode.CustomTextEditorProvider, 
           }
         });
       });
+
+      if (typeof state.changeIndex === 'number' && changeRows.length > 0) {
+        activateChange(changeRows, state.changeIndex);
+      }
     }
 
     render();

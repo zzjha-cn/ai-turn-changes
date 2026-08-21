@@ -7,15 +7,58 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
   private lastTerminalOutputTime: number = 0;
   private lastFileChangeTime: number = 0;
   private hasActivity: boolean = false;
+  private sawCommandEnd: boolean = false;
+  private lastPromptTime: number = 0;
+  private terminalAwaitingInput: boolean = false;
+  private continuationPromptActive: boolean = false;
 
   constructor(terminalQuietMs: number = 1200, fileQuietMs: number = 1000) {
     this.terminalQuietMs = terminalQuietMs;
     this.fileQuietMs = fileQuietMs;
   }
 
-  public onTerminalOutput(_event: TerminalOutputEvent): void {
+  public onTerminalOutput(event: TerminalOutputEvent): void {
     this.lastTerminalOutputTime = Date.now();
     this.hasActivity = true;
+
+    if (event.kind === 'commandStart') {
+      this.sawCommandEnd = false;
+      this.lastPromptTime = 0;
+      this.terminalAwaitingInput = false;
+      this.continuationPromptActive = false;
+      return;
+    }
+
+    if (event.kind === 'commandEnd') {
+      this.sawCommandEnd = true;
+      this.terminalAwaitingInput = false;
+      this.continuationPromptActive = false;
+      return;
+    }
+
+    if (event.kind === 'awaitingInput') {
+      this.terminalAwaitingInput = true;
+      this.continuationPromptActive = false;
+      this.lastPromptTime = 0;
+      return;
+    }
+
+    if (event.kind === 'continuationPrompt') {
+      this.continuationPromptActive = true;
+      this.terminalAwaitingInput = false;
+      this.lastPromptTime = 0;
+      return;
+    }
+
+    if (event.kind === 'prompt') {
+      this.lastPromptTime = Date.now();
+      this.terminalAwaitingInput = false;
+      this.continuationPromptActive = false;
+      return;
+    }
+
+    this.terminalAwaitingInput = false;
+    this.continuationPromptActive = false;
   }
 
   public onFileChange(_event: WorkspaceFileChangeEvent): void {
@@ -32,9 +75,20 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
       return null;
     }
 
+    if (this.terminalAwaitingInput || this.continuationPromptActive) {
+      return null;
+    }
+
     const now = Date.now();
     const terminalIdle = now - this.lastTerminalOutputTime >= this.terminalQuietMs;
     const fileIdle = now - this.lastFileChangeTime >= this.fileQuietMs;
+
+    if (this.sawCommandEnd && this.lastPromptTime > 0 && this.lastPromptTime >= this.lastTerminalOutputTime - 50 && fileIdle) {
+      return {
+        action: 'complete',
+        reason: 'Shell prompt restored after command end'
+      };
+    }
 
     if (terminalIdle && fileIdle) {
       return {
@@ -50,6 +104,10 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
     this.lastTerminalOutputTime = 0;
     this.lastFileChangeTime = 0;
     this.hasActivity = false;
+    this.sawCommandEnd = false;
+    this.lastPromptTime = 0;
+    this.terminalAwaitingInput = false;
+    this.continuationPromptActive = false;
   }
 
   /**

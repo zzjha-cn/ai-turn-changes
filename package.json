@@ -126,6 +126,16 @@
                     "command": "turnChanges.selectTurn",
                     "when": "view == turnChangesView && viewItem == turnNode",
                     "group": "inline@1"
+                },
+                {
+                    "command": "turnChanges.mergeTurnDown",
+                    "when": "view == turnChangesView && viewItem == turnNode",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "turnChanges.removeTurn",
+                    "when": "view == turnChangesView && viewItem == turnNode",
+                    "group": "navigation@3"
                 }
             ]
         }

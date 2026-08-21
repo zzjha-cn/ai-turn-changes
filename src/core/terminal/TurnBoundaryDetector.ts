@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 export interface TerminalOutputEvent {
   terminal: vscode.Terminal;
   data: string;
+  kind?: 'output' | 'commandStart' | 'commandEnd' | 'prompt' | 'awaitingInput' | 'continuationPrompt';
 }
 
 export interface WorkspaceFileChangeEvent {
