@@ -1,6 +1,10 @@
 import { TurnBoundaryDetector, TerminalOutputEvent, WorkspaceFileChangeEvent, BoundaryDecision } from './TurnBoundaryDetector';
 
 export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
+  private static readonly runningTerminalQuietMs = 12000;
+  private static readonly completeGraceMs = 4000;
+  private static readonly busyLatchMs = 20000;
+
   private terminalQuietMs: number;
   private fileQuietMs: number;
 
@@ -11,6 +15,8 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
   private lastPromptTime: number = 0;
   private terminalAwaitingInput: boolean = false;
   private continuationPromptActive: boolean = false;
+  private lastBusyTime: number = 0;
+  private pendingCompletion?: { reason: string; detectedAt: number };
 
   constructor(terminalQuietMs: number = 1200, fileQuietMs: number = 1000) {
     this.terminalQuietMs = terminalQuietMs;
@@ -26,6 +32,8 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
       this.lastPromptTime = 0;
       this.terminalAwaitingInput = false;
       this.continuationPromptActive = false;
+      this.lastBusyTime = 0;
+      this.pendingCompletion = undefined;
       return;
     }
 
@@ -33,6 +41,8 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
       this.sawCommandEnd = true;
       this.terminalAwaitingInput = false;
       this.continuationPromptActive = false;
+      this.lastBusyTime = 0;
+      this.pendingCompletion = undefined;
       return;
     }
 
@@ -40,6 +50,17 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
       this.terminalAwaitingInput = true;
       this.continuationPromptActive = false;
       this.lastPromptTime = 0;
+      this.lastBusyTime = 0;
+      this.pendingCompletion = undefined;
+      return;
+    }
+
+    if (event.kind === 'busy') {
+      this.lastBusyTime = Date.now();
+      this.terminalAwaitingInput = false;
+      this.continuationPromptActive = false;
+      this.lastPromptTime = 0;
+      this.pendingCompletion = undefined;
       return;
     }
 
@@ -47,6 +68,8 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
       this.continuationPromptActive = true;
       this.terminalAwaitingInput = false;
       this.lastPromptTime = 0;
+      this.lastBusyTime = 0;
+      this.pendingCompletion = undefined;
       return;
     }
 
@@ -64,6 +87,7 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
   public onFileChange(_event: WorkspaceFileChangeEvent): void {
     this.lastFileChangeTime = Date.now();
     this.hasActivity = true;
+    this.pendingCompletion = undefined;
   }
 
   /**
@@ -80,24 +104,48 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
     }
 
     const now = Date.now();
-    const terminalIdle = now - this.lastTerminalOutputTime >= this.terminalQuietMs;
+    const busyActive = this.lastBusyTime > 0 && now - this.lastBusyTime < QuietWindowBoundaryDetector.busyLatchMs;
+    if (busyActive) {
+      this.pendingCompletion = undefined;
+      return null;
+    }
+
+    const terminalIdleThreshold = this.sawCommandEnd ? this.terminalQuietMs : Math.max(this.terminalQuietMs, QuietWindowBoundaryDetector.runningTerminalQuietMs);
+    const terminalIdle = now - this.lastTerminalOutputTime >= terminalIdleThreshold;
     const fileIdle = now - this.lastFileChangeTime >= this.fileQuietMs;
 
     if (this.sawCommandEnd && this.lastPromptTime > 0 && this.lastPromptTime >= this.lastTerminalOutputTime - 50 && fileIdle) {
-      return {
-        action: 'complete',
-        reason: 'Shell prompt restored after command end'
-      };
+      return this.resolvePendingCompletion('Shell prompt restored after command end', now);
     }
 
     if (terminalIdle && fileIdle) {
-      return {
-        action: 'complete',
-        reason: 'Dual quiet window reached'
-      };
+      return this.resolvePendingCompletion(
+        this.sawCommandEnd ? 'Dual quiet window reached after command end' : 'Dual quiet window reached while command still running',
+        now
+      );
     }
 
+    this.pendingCompletion = undefined;
     return null;
+  }
+
+  private resolvePendingCompletion(reason: string, now: number): BoundaryDecision | null {
+    if (!this.pendingCompletion || this.pendingCompletion.reason !== reason) {
+      this.pendingCompletion = {
+        reason,
+        detectedAt: now
+      };
+      return null;
+    }
+
+    if (now - this.pendingCompletion.detectedAt < QuietWindowBoundaryDetector.completeGraceMs) {
+      return null;
+    }
+
+    return {
+      action: 'complete',
+      reason
+    };
   }
 
   public reset(): void {
@@ -108,6 +156,8 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
     this.lastPromptTime = 0;
     this.terminalAwaitingInput = false;
     this.continuationPromptActive = false;
+    this.lastBusyTime = 0;
+    this.pendingCompletion = undefined;
   }
 
   /**

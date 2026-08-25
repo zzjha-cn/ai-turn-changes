@@ -191,6 +191,28 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage(`Turn #${turnId} removed.`);
   });
 
+  const removeTurnsFromCommand = vscode.commands.registerCommand('turnChanges.removeTurnsFrom', async (node?: { record?: { turnId: number } }) => {
+    const turnId = node?.record?.turnId;
+    if (!turnId) {
+      vscode.window.showWarningMessage('Please select a turn to remove from.');
+      return;
+    }
+    const confirmed = await vscode.window.showWarningMessage(
+      `Remove Turn #${turnId} and all newer turns?`,
+      { modal: true },
+      'Remove'
+    );
+    if (confirmed !== 'Remove') {
+      return;
+    }
+    const removed = turnManager.removeTurnsFrom(turnId);
+    if (removed.length === 0) {
+      vscode.window.showWarningMessage('Cannot remove turns from this point.');
+      return;
+    }
+    vscode.window.showInformationMessage(`Removed ${removed.length} turn(s) from Turn #${turnId}.`);
+  });
+
   // 处理文件点击跳转和对比展示
   const openFileChangeCommand = vscode.commands.registerCommand('turnChanges.openFileChange', async (fileNode: FileNode) => {
     if (fileNode.change.status === 'deleted') {
@@ -216,6 +238,7 @@ export async function activate(context: vscode.ExtensionContext) {
     mergeTurnDownCommand,
     selectTurnCommand,
     removeTurnCommand,
+    removeTurnsFromCommand,
     openFileChangeCommand,
     turnDiffContentProviderRegistration,
     customEditorRegistration,

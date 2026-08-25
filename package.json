@@ -2,7 +2,7 @@
     "name": "ai-turn-changes",
     "displayName": "AI Turn Changes Visualizer",
     "description": "Visualize and browse code changes made by terminal-based AI agents like Claude or Codex, organized by turns.",
-    "version": "0.0.1",
+    "version": "0.0.4",
     "publisher": "seanz-hahaha",
     "engines": {
         "vscode": "^1.80.0"
@@ -118,6 +118,12 @@
                 "title": "AI Turn: Remove Selected Turn",
                 "category": "AI Turn Changes",
                 "icon": "$(trash)"
+            },
+            {
+                "command": "turnChanges.removeTurnsFrom",
+                "title": "AI Turn: Remove From Selected Turn",
+                "category": "AI Turn Changes",
+                "icon": "$(trash)"
             }
         ],
         "menus": {
@@ -136,6 +142,11 @@
                     "command": "turnChanges.removeTurn",
                     "when": "view == turnChangesView && viewItem == turnNode",
                     "group": "navigation@3"
+                },
+                {
+                    "command": "turnChanges.removeTurnsFrom",
+                    "when": "view == turnChangesView && viewItem == turnNode",
+                    "group": "navigation@4"
                 }
             ]
         }

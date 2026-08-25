@@ -590,46 +590,50 @@ export class TurnDiffEditorProvider implements vscode.CustomTextEditorProvider, 
       display: flex;
       flex-direction: column;
       gap: 0;
-      padding: 6px 0;
+      padding: 6px 20px 6px 0;
+      overflow: visible;
     }
     .pair-wrapper {
       position: relative;
       border-radius: 14px;
-      overflow: hidden;
+      overflow: visible;
       border: 1px solid rgba(255,255,255,0.05);
       background: rgba(255,255,255,0.01);
       box-shadow: 0 16px 36px rgba(0,0,0,0.18);
     }
     .pair-jump {
       position: absolute;
-      right: 12px;
-      bottom: 12px;
+      right: -14px;
+      bottom: 18px;
       width: 28px;
       height: 28px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       border-radius: 999px;
-      border: 1px solid rgba(96,165,250,0.38);
-      background: rgba(37,99,235,0.34);
-      color: rgba(239,246,255,0.98);
+      border: 1px solid rgba(96,165,250,0.18);
+      background: rgba(37,99,235,0.18);
+      color: rgba(226,232,240,0.82);
       cursor: pointer;
       font-size: 14px;
       line-height: 1;
-      box-shadow: 0 10px 24px rgba(37,99,235,0.22);
-      transition: background 120ms ease, border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+      opacity: 0.78;
+      box-shadow: 0 8px 20px rgba(37,99,235,0.14);
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease, transform 120ms ease, box-shadow 120ms ease;
     }
     .pair-jump:hover {
       background: rgba(59,130,246,0.52);
       border-color: rgba(147,197,253,0.72);
+      color: rgba(248,250,252,0.98);
+      opacity: 1;
       box-shadow: 0 14px 30px rgba(59,130,246,0.3);
       transform: translateY(-1px);
     }
     body[data-theme="light"] .pair-jump {
-      background: rgba(37,99,235,0.14);
-      color: rgba(29,78,216,0.96);
-      border-color: rgba(37,99,235,0.22);
-      box-shadow: 0 10px 24px rgba(37,99,235,0.12);
+      background: rgba(37,99,235,0.08);
+      color: rgba(29,78,216,0.7);
+      border-color: rgba(37,99,235,0.14);
+      box-shadow: 0 8px 20px rgba(37,99,235,0.08);
     }
     .pair-connector {
       height: 10px;
@@ -682,7 +686,8 @@ export class TurnDiffEditorProvider implements vscode.CustomTextEditorProvider, 
       color: rgba(255, 201, 197, 0.78);
     }
     .new-corner-label {
-      bottom: 6px;
+      bottom: 10px;
+      right: 14px;
       color: rgba(183, 240, 193, 0.78);
     }
     body[data-theme="light"] .old-corner-label {

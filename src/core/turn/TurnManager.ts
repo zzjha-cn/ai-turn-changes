@@ -18,6 +18,7 @@ export class TurnManager {
   private mode: 'manual' | 'auto' = 'manual';
   private boundaryDetector?: TurnBoundaryDetector;
   private autoFinalizeTimer?: NodeJS.Timeout;
+  private autoFinalizeInFlight: boolean = false;
 
   private onStateChangedEmitter = new vscode.EventEmitter<void>();
   public readonly onStateChanged = this.onStateChangedEmitter.event;
@@ -84,22 +85,21 @@ export class TurnManager {
    * 检查自动模式下，是否由于检测到双静默窗口而需要生成一轮新 Turn
    */
   private async checkAutoFinalize(): Promise<void> {
-    if (this.mode !== 'auto' || !this.boundaryDetector) {
+    if (this.mode !== 'auto' || !this.boundaryDetector || this.autoFinalizeInFlight) {
       return;
     }
 
     const decision = this.boundaryDetector.tryCompleteCandidate();
     if (decision && decision.action === 'complete') {
-      // 1. 如果当前没有活跃的 Candidate 记录，则在触发检测到活动时，自动创建 baseline 并进入 recording 状态
-      // 由于 QuietWindowBoundaryDetector 在第一次收到输出或文件改动时，就会有 hasActivity
-      // 我们需要在静默达成时执行 Finalize。
-      if (!this.activeCandidate) {
-        // 自动产生一个 Candidate
-        await this.startAutoCandidate();
+      this.autoFinalizeInFlight = true;
+      try {
+        if (!this.activeCandidate) {
+          await this.startAutoCandidate();
+        }
+        await this.finalizeAutoCandidate();
+      } finally {
+        this.autoFinalizeInFlight = false;
       }
-
-      // 执行 Finalize
-      await this.finalizeAutoCandidate();
     }
   }
 
@@ -344,6 +344,23 @@ export class TurnManager {
     this.snapshotStore.removeReferences(target.snapshotIds || []);
     this.onStateChangedEmitter.fire();
     return target;
+  }
+
+  public removeTurnsFrom(turnId: number): TurnRecord[] {
+    const history = this.turnStore.getHistory();
+    const targets = history.filter(record => record.turnId >= turnId);
+    if (targets.length === 0) {
+      return [];
+    }
+
+    const removedTurnIds = new Set(targets.map(record => record.turnId));
+    const updatedHistory = history.filter(record => !removedTurnIds.has(record.turnId));
+    const snapshotIds = Array.from(new Set(targets.flatMap(record => record.snapshotIds || [])));
+
+    this.turnStore.replaceHistory(updatedHistory);
+    this.snapshotStore.removeReferences(snapshotIds);
+    this.onStateChangedEmitter.fire();
+    return targets;
   }
 
   public mergeTurnDown(turnId: number): TurnRecord | null {

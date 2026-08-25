@@ -73,7 +73,7 @@ export class TerminalMonitor {
     this.disposables.forEach(d => d.dispose());
   }
 
-  private classifyTerminalData(terminal: vscode.Terminal, data: string): 'output' | 'prompt' | 'awaitingInput' | 'continuationPrompt' {
+  private classifyTerminalData(terminal: vscode.Terminal, data: string): 'output' | 'prompt' | 'awaitingInput' | 'continuationPrompt' | 'busy' {
     const key = this.getTerminalKey(terminal);
     const previous = this.terminalTailBuffer.get(key) || '';
     const combined = (previous + data).slice(-4000);
@@ -83,20 +83,25 @@ export class TerminalMonitor {
     const lines = normalized.split(/\r?\n/);
     const tailLine = (lines[lines.length - 1] || '').trimEnd();
     const recentTail = normalized.slice(-600);
+    const recentLines = lines.map(line => line.trimEnd()).filter(line => line.trim().length > 0).slice(-5);
+    const recentWindow = recentLines.join('\n');
 
-    if (this.isAwaitingInput(recentTail, tailLine)) {
+    if (this.isAwaitingInput(recentTail, tailLine, recentWindow)) {
       return 'awaitingInput';
+    }
+    if (this.isBusyStatus(recentWindow)) {
+      return 'busy';
     }
     if (this.isContinuationPrompt(tailLine)) {
       return 'continuationPrompt';
     }
-    if (this.isShellPrompt(tailLine)) {
+    if (this.isShellPrompt(tailLine) && !this.isBusyStatus(recentWindow)) {
       return 'prompt';
     }
     return 'output';
   }
 
-  private isAwaitingInput(recentTail: string, tailLine: string): boolean {
+  private isAwaitingInput(recentTail: string, tailLine: string, recentWindow: string): boolean {
     const promptPatterns = [
       /(?:^|\n).*\b(?:allow|approve|grant permission|proceed|continue|confirm|apply)\b[^\n]*\?/i,
       /(?:^|\n).*\b(?:select|choose|pick)\b[^\n]*\b(?:option|an option|one)\b/i,
@@ -106,7 +111,7 @@ export class TerminalMonitor {
       /(?:^|\n).*\((?:y\/n|yes\/no|Y\/n|y\/N)\)\s*$/i,
       /(?:^|\n).*[:：]\s*$/
     ];
-    if (promptPatterns.some(pattern => pattern.test(recentTail))) {
+    if (promptPatterns.some(pattern => pattern.test(recentWindow) || pattern.test(recentTail))) {
       return true;
     }
     return /(?:^|\s)(?:y\/n|yes\/no)\s*\??\s*$/i.test(tailLine);
@@ -114,6 +119,24 @@ export class TerminalMonitor {
 
   private isContinuationPrompt(tailLine: string): boolean {
     return /(?:^|\s)(?:dquote|quote|bquote|pipe|cmdsubst|heredoc)>\s*$/.test(tailLine);
+  }
+
+  private isBusyStatus(recentWindow: string): boolean {
+    const hasBusyGlyph = /[✻✢✳*]/.test(recentWindow);
+    const hasEllipsis = /(?:\.\.\.|…)/.test(recentWindow);
+    if (hasBusyGlyph && hasEllipsis) {
+      return /(?:^|\n).*?(?:[✻✢✳*]).*?(?:\.\.\.|…).*$/i.test(recentWindow);
+    }
+
+    const progressPatterns = [
+      /(?:^|\n).*\bran\s+\d+\s+shell\s+commands?\b.*$/i,
+      /(?:^|\n).*\bread\s+\d+\s+files?\b.*$/i,
+      /(?:^|\n).*\bsearched\b.*$/i,
+      /(?:^|\n).*\bupdated\b.*$/i,
+      /(?:^|\n).*\bapplied\b.*$/i
+    ];
+
+    return progressPatterns.some(pattern => pattern.test(recentWindow));
   }
 
   private isShellPrompt(tailLine: string): boolean {
