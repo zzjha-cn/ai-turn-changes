@@ -21,5 +21,6 @@ export interface TurnBoundaryDetector {
   onFileChange(event: WorkspaceFileChangeEvent): void;
   tryCompleteCandidate(): BoundaryDecision | null;
   hasRecentActivity?(): boolean;
+  hasTerminalActivity?(): boolean;
   reset(): void;
 }

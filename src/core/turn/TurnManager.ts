@@ -93,6 +93,11 @@ export class TurnManager {
       return;
     }
 
+    if (!this.boundaryDetector.hasTerminalActivity?.()) {
+      this.scheduleNextAutoFinalizeCheck(this.getAutoFinalizePollMs());
+      return;
+    }
+
     const decision = this.boundaryDetector.tryCompleteCandidate();
     if (decision && decision.action === 'complete') {
       this.autoFinalizeInFlight = true;

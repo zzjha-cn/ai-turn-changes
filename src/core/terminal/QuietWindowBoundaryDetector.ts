@@ -18,6 +18,7 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
   private continuationPromptActive: boolean = false;
   private lastBusyTime: number = 0;
   private pendingCompletion?: { reason: string; detectedAt: number };
+  private hasTerminalTriggeredActivity: boolean = false;
 
   constructor(terminalQuietMs: number = 1200, fileQuietMs: number = 1000) {
     this.terminalQuietMs = terminalQuietMs;
@@ -27,6 +28,7 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
   public onTerminalOutput(event: TerminalOutputEvent): void {
     this.lastTerminalOutputTime = Date.now();
     this.hasActivity = true;
+    this.hasTerminalTriggeredActivity = true;
 
     if (event.kind === 'commandStart') {
       this.sawCommandEnd = false;
@@ -86,6 +88,9 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
   }
 
   public onFileChange(_event: WorkspaceFileChangeEvent): void {
+    if (!this.hasTerminalTriggeredActivity) {
+      return;
+    }
     this.lastFileChangeTime = Date.now();
     this.hasActivity = true;
     this.pendingCompletion = undefined;
@@ -139,6 +144,10 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
       || this.continuationPromptActive;
   }
 
+  public hasTerminalActivity(): boolean {
+    return this.hasTerminalTriggeredActivity;
+  }
+
   private resolvePendingCompletion(reason: string, now: number): BoundaryDecision | null {
     if (!this.pendingCompletion || this.pendingCompletion.reason !== reason) {
       this.pendingCompletion = {
@@ -168,6 +177,7 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
     this.continuationPromptActive = false;
     this.lastBusyTime = 0;
     this.pendingCompletion = undefined;
+    this.hasTerminalTriggeredActivity = false;
   }
 
   /**
