@@ -5,12 +5,14 @@ import { GitWorkspaceService } from '../git/GitWorkspaceService';
 export class FileWatchService {
   private detector: TurnBoundaryDetector;
   private gitService: GitWorkspaceService;
+  private shouldTrackFileEvent: (uri: vscode.Uri) => boolean;
   private fileWatcher?: vscode.FileSystemWatcher;
   private disposables: vscode.Disposable[] = [];
 
-  constructor(detector: TurnBoundaryDetector, gitService: GitWorkspaceService) {
+  constructor(detector: TurnBoundaryDetector, gitService: GitWorkspaceService, shouldTrackFileEvent?: (uri: vscode.Uri) => boolean) {
     this.detector = detector;
     this.gitService = gitService;
+    this.shouldTrackFileEvent = shouldTrackFileEvent || (() => true);
     this.startWatching();
   }
 
@@ -21,6 +23,10 @@ export class FileWatchService {
     this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 
     const handleFileEvent = async (uri: vscode.Uri, type: 'create' | 'change' | 'delete') => {
+      if (!this.shouldTrackFileEvent(uri)) {
+        return;
+      }
+
       const fsPath = uri.fsPath;
       if (fsPath.includes('node_modules') || fsPath.includes('.git') || fsPath.includes('out') || fsPath.includes('dist')) {
         return;

@@ -4,6 +4,7 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
   private static readonly runningTerminalQuietMs = 12000;
   private static readonly completeGraceMs = 4000;
   private static readonly busyLatchMs = 20000;
+  private static readonly recentActivityWindowMs = 5000;
 
   private terminalQuietMs: number;
   private fileQuietMs: number;
@@ -127,6 +128,15 @@ export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
 
     this.pendingCompletion = undefined;
     return null;
+  }
+
+  public hasRecentActivity(): boolean {
+    const now = Date.now();
+    return (this.lastTerminalOutputTime > 0 && now - this.lastTerminalOutputTime < QuietWindowBoundaryDetector.recentActivityWindowMs)
+      || (this.lastFileChangeTime > 0 && now - this.lastFileChangeTime < QuietWindowBoundaryDetector.recentActivityWindowMs)
+      || (this.lastBusyTime > 0 && now - this.lastBusyTime < QuietWindowBoundaryDetector.busyLatchMs)
+      || this.terminalAwaitingInput
+      || this.continuationPromptActive;
   }
 
   private resolvePendingCompletion(reason: string, now: number): BoundaryDecision | null {

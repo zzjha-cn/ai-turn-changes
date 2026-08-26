@@ -69,6 +69,22 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
   private getSessionNodes(): TreeNode[] {
     const mode = this.turnManager.getMode();
     const activeCandidate = this.turnManager.getActiveCandidate();
+    const boundTerminal = this.terminalBinding?.getBoundTerminal();
+    const turnStateLabel = activeCandidate
+      ? 'Turn State: Recording'
+      : mode === 'auto' && !boundTerminal
+        ? 'Turn State: Waiting for Terminal'
+        : 'Turn State: Ready';
+    const turnStateIcon = activeCandidate
+      ? 'record'
+      : mode === 'auto' && !boundTerminal
+        ? 'plug'
+        : 'circle-large-outline';
+    const turnStateTooltip = activeCandidate
+      ? 'A turn is currently being recorded'
+      : mode === 'auto' && !boundTerminal
+        ? 'Automatic mode is waiting for a bound terminal'
+        : 'No turn is currently recording';
     const nodes: TreeNode[] = [
       new StatusNode(
         `Mode: ${mode === 'auto' ? 'Automatic' : 'Manual'}`,
@@ -77,15 +93,14 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
         mode === 'auto' ? 'Current mode is Automatic' : 'Current mode is Manual'
       ),
       new StatusNode(
-        activeCandidate ? 'Turn State: Recording' : 'Turn State: Ready',
+        turnStateLabel,
         'turnStateStatus',
-        activeCandidate ? 'record' : 'circle-large-outline',
-        activeCandidate ? 'A turn is currently being recorded' : 'No turn is currently recording'
+        turnStateIcon,
+        turnStateTooltip
       )
     ];
 
     if (this.terminalBinding) {
-      const boundTerminal = this.terminalBinding.getBoundTerminal();
       nodes.push(new StatusNode(
         boundTerminal ? `Terminal: ${boundTerminal.name}` : 'Terminal: Unbound',
         'terminalStatus',

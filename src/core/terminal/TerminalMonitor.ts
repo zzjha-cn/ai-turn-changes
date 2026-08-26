@@ -3,10 +3,13 @@ import { TerminalBindingService } from './TerminalBindingService';
 import { TurnBoundaryDetector } from './TurnBoundaryDetector';
 
 export class TerminalMonitor {
+  private static readonly outputCoalesceMs = 500;
+
   private bindingService: TerminalBindingService;
   private detector: TurnBoundaryDetector;
   private disposables: vscode.Disposable[] = [];
   private terminalTailBuffer = new Map<string, string>();
+  private pendingTerminalData = new Map<string, { terminal: vscode.Terminal; chunks: string[]; timer?: NodeJS.Timeout }>();
 
   constructor(bindingService: TerminalBindingService, detector: TurnBoundaryDetector) {
     this.bindingService = bindingService;
@@ -54,12 +57,7 @@ export class TerminalMonitor {
     const writeDataDisposable = (vscode.window as any).onDidWriteTerminalData?.((e: any) => {
       const boundTerminal = this.bindingService.getBoundTerminal();
       if (boundTerminal && e.terminal === boundTerminal) {
-        const kind = this.classifyTerminalData(e.terminal, e.data);
-        this.detector.onTerminalOutput({
-          terminal: e.terminal,
-          data: e.data,
-          kind
-        });
+        this.queueTerminalData(e.terminal, e.data);
       }
     });
 
@@ -69,8 +67,51 @@ export class TerminalMonitor {
   }
 
   public dispose(): void {
+    for (const pending of this.pendingTerminalData.values()) {
+      if (pending.timer) {
+        clearTimeout(pending.timer);
+      }
+    }
+    this.pendingTerminalData.clear();
     this.terminalTailBuffer.clear();
     this.disposables.forEach(d => d.dispose());
+  }
+
+  private queueTerminalData(terminal: vscode.Terminal, data: string): void {
+    const key = this.getTerminalKey(terminal);
+    const existing = this.pendingTerminalData.get(key);
+    if (existing) {
+      existing.chunks.push(data);
+      return;
+    }
+
+    const pending = {
+      terminal,
+      chunks: [data],
+      timer: setTimeout(() => {
+        this.flushTerminalData(key);
+      }, TerminalMonitor.outputCoalesceMs)
+    };
+    this.pendingTerminalData.set(key, pending);
+  }
+
+  private flushTerminalData(key: string): void {
+    const pending = this.pendingTerminalData.get(key);
+    if (!pending) {
+      return;
+    }
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingTerminalData.delete(key);
+
+    const data = pending.chunks.join('');
+    const kind = this.classifyTerminalData(pending.terminal, data);
+    this.detector.onTerminalOutput({
+      terminal: pending.terminal,
+      data,
+      kind
+    });
   }
 
   private classifyTerminalData(terminal: vscode.Terminal, data: string): 'output' | 'prompt' | 'awaitingInput' | 'continuationPrompt' | 'busy' {

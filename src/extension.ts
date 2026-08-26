@@ -48,7 +48,17 @@ export async function activate(context: vscode.ExtensionContext) {
   const terminalBinding = new TerminalBindingService();
   const quietDetector = new QuietWindowBoundaryDetector(1200, 1000);
   const terminalMonitor = new TerminalMonitor(terminalBinding, quietDetector);
-  const fileWatchService = new FileWatchService(quietDetector, gitService);
+  const fileWatchService = new FileWatchService(
+    quietDetector,
+    gitService,
+    uri => {
+      const boundTerminal = terminalBinding.getBoundTerminal();
+      if (!boundTerminal || turnManager.getMode() !== 'auto') {
+        return false;
+      }
+      return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath === workspaceRoot;
+    }
+  );
   turnManager.setMode('auto', quietDetector);
 
   // 3. 初始化 UI 与高亮组件

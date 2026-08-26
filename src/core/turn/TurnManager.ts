@@ -8,6 +8,9 @@ import { TurnStore } from '../storage/TurnStore';
 import { TurnBoundaryDetector } from '../terminal/TurnBoundaryDetector';
 
 export class TurnManager {
+  private static readonly autoFinalizeActivePollMs = 1000;
+  private static readonly autoFinalizeIdlePollMs = 2000;
+
   private gitService: GitWorkspaceService;
   private baselineStore: BaselineStore;
   private diffEngine: DiffEngine;
@@ -48,11 +51,9 @@ export class TurnManager {
 
     // 启动一个低频轮询，用来检查静默窗口是否满足
     if (this.autoFinalizeTimer) {
-      clearInterval(this.autoFinalizeTimer);
+      clearTimeout(this.autoFinalizeTimer);
     }
-    this.autoFinalizeTimer = setInterval(() => {
-      this.checkAutoFinalize();
-    }, 500);
+    this.scheduleNextAutoFinalizeCheck(TurnManager.autoFinalizeIdlePollMs);
 
     this.onStateChangedEmitter.fire();
   }
@@ -75,7 +76,7 @@ export class TurnManager {
     this.mode = 'manual';
     this.boundaryDetector = undefined;
     if (this.autoFinalizeTimer) {
-      clearInterval(this.autoFinalizeTimer);
+      clearTimeout(this.autoFinalizeTimer);
       this.autoFinalizeTimer = undefined;
     }
     this.onStateChangedEmitter.fire();
@@ -86,6 +87,9 @@ export class TurnManager {
    */
   private async checkAutoFinalize(): Promise<void> {
     if (this.mode !== 'auto' || !this.boundaryDetector || this.autoFinalizeInFlight) {
+      if (this.mode === 'auto' && this.boundaryDetector) {
+        this.scheduleNextAutoFinalizeCheck(this.getAutoFinalizePollMs());
+      }
       return;
     }
 
@@ -99,8 +103,27 @@ export class TurnManager {
         await this.finalizeAutoCandidate();
       } finally {
         this.autoFinalizeInFlight = false;
+        this.scheduleNextAutoFinalizeCheck(this.getAutoFinalizePollMs());
       }
+      return;
     }
+
+    this.scheduleNextAutoFinalizeCheck(this.getAutoFinalizePollMs());
+  }
+
+  private scheduleNextAutoFinalizeCheck(delayMs: number): void {
+    if (this.autoFinalizeTimer) {
+      clearTimeout(this.autoFinalizeTimer);
+    }
+    this.autoFinalizeTimer = setTimeout(() => {
+      void this.checkAutoFinalize();
+    }, delayMs);
+  }
+
+  private getAutoFinalizePollMs(): number {
+    return this.boundaryDetector?.hasRecentActivity?.()
+      ? TurnManager.autoFinalizeActivePollMs
+      : TurnManager.autoFinalizeIdlePollMs;
   }
 
   /**
