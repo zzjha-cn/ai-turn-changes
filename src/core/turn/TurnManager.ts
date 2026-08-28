@@ -98,13 +98,14 @@ export class TurnManager {
       return;
     }
 
+    if (!this.activeCandidate) {
+      await this.startAutoCandidate();
+    }
+
     const decision = this.boundaryDetector.tryCompleteCandidate();
     if (decision && decision.action === 'complete') {
       this.autoFinalizeInFlight = true;
       try {
-        if (!this.activeCandidate) {
-          await this.startAutoCandidate();
-        }
         await this.finalizeAutoCandidate();
       } finally {
         this.autoFinalizeInFlight = false;

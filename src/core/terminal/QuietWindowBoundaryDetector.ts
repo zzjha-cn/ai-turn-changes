@@ -3,7 +3,7 @@ import { TurnBoundaryDetector, TerminalOutputEvent, WorkspaceFileChangeEvent, Bo
 export class QuietWindowBoundaryDetector implements TurnBoundaryDetector {
   private static readonly runningTerminalQuietMs = 12000;
   private static readonly completeGraceMs = 4000;
-  private static readonly busyLatchMs = 20000;
+  private static readonly busyLatchMs = 8000;
   private static readonly recentActivityWindowMs = 5000;
 
   private terminalQuietMs: number;

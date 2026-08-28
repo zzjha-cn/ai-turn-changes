@@ -70,21 +70,41 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
     const mode = this.turnManager.getMode();
     const activeCandidate = this.turnManager.getActiveCandidate();
     const boundTerminal = this.terminalBinding?.getBoundTerminal();
-    const turnStateLabel = activeCandidate
-      ? 'Turn State: Recording'
+    const turnStateInfo = activeCandidate
+      ? activeCandidate.state === 'settling'
+        ? {
+            label: 'Turn State: Settling',
+            icon: 'sync',
+            tooltip: 'A detected turn is being finalized'
+          }
+        : activeCandidate.state === 'waiting'
+          ? {
+              label: 'Turn State: Waiting',
+              icon: 'clock',
+              tooltip: 'A detected turn is waiting for the next state transition'
+            }
+          : {
+              label: 'Turn State: Recording',
+              icon: 'record',
+              tooltip: 'A turn is currently being recorded'
+            }
       : mode === 'auto' && !boundTerminal
-        ? 'Turn State: Waiting for Terminal'
-        : 'Turn State: Ready';
-    const turnStateIcon = activeCandidate
-      ? 'record'
-      : mode === 'auto' && !boundTerminal
-        ? 'plug'
-        : 'circle-large-outline';
-    const turnStateTooltip = activeCandidate
-      ? 'A turn is currently being recorded'
-      : mode === 'auto' && !boundTerminal
-        ? 'Automatic mode is waiting for a bound terminal'
-        : 'No turn is currently recording';
+        ? {
+            label: 'Turn State: Waiting for Terminal',
+            icon: 'plug',
+            tooltip: 'Automatic mode is waiting for a bound terminal'
+          }
+        : mode === 'auto'
+          ? {
+              label: 'Turn State: Waiting for Activity',
+              icon: 'pulse',
+              tooltip: 'Automatic mode is waiting for terminal activity to begin a turn'
+            }
+          : {
+              label: 'Turn State: Ready',
+              icon: 'circle-large-outline',
+              tooltip: 'No turn is currently recording'
+            };
     const nodes: TreeNode[] = [
       new StatusNode(
         `Mode: ${mode === 'auto' ? 'Automatic' : 'Manual'}`,
@@ -93,10 +113,10 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
         mode === 'auto' ? 'Current mode is Automatic' : 'Current mode is Manual'
       ),
       new StatusNode(
-        turnStateLabel,
+        turnStateInfo.label,
         'turnStateStatus',
-        turnStateIcon,
-        turnStateTooltip
+        turnStateInfo.icon,
+        turnStateInfo.tooltip
       )
     ];
 
