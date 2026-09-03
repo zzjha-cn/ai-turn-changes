@@ -377,13 +377,16 @@ export class TurnManager {
 
   public removeTurnsFrom(turnId: number): TurnRecord[] {
     const history = this.turnStore.getHistory();
-    const targets = history.filter(record => record.turnId >= turnId);
+    const targets = history.filter(record => record.turnId < turnId);
     if (targets.length === 0) {
       return [];
     }
 
     const removedTurnIds = new Set(targets.map(record => record.turnId));
-    const updatedHistory = history.filter(record => !removedTurnIds.has(record.turnId));
+    const replacementParentId = history.find(record => record.turnId === turnId)?.parentTurnId;
+    const updatedHistory = history
+      .filter(record => !removedTurnIds.has(record.turnId))
+      .map(record => removedTurnIds.has(record.parentTurnId || -1) ? { ...record, parentTurnId: replacementParentId } : record);
     const snapshotIds = Array.from(new Set(targets.flatMap(record => record.snapshotIds || [])));
 
     this.turnStore.replaceHistory(updatedHistory);

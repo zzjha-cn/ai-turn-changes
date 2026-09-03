@@ -204,11 +204,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const removeTurnsFromCommand = vscode.commands.registerCommand('turnChanges.removeTurnsFrom', async (node?: { record?: { turnId: number } }) => {
     const turnId = node?.record?.turnId;
     if (!turnId) {
-      vscode.window.showWarningMessage('Please select a turn to remove from.');
+      vscode.window.showWarningMessage('Please select a turn to remove older turns from.');
       return;
     }
     const confirmed = await vscode.window.showWarningMessage(
-      `Remove Turn #${turnId} and all newer turns?`,
+      `Remove all turns older than Turn #${turnId}?`,
       { modal: true },
       'Remove'
     );
@@ -217,10 +217,10 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     const removed = turnManager.removeTurnsFrom(turnId);
     if (removed.length === 0) {
-      vscode.window.showWarningMessage('Cannot remove turns from this point.');
+      vscode.window.showWarningMessage('No older turns can be removed from this point.');
       return;
     }
-    vscode.window.showInformationMessage(`Removed ${removed.length} turn(s) from Turn #${turnId}.`);
+    vscode.window.showInformationMessage(`Removed ${removed.length} older turn(s) before Turn #${turnId}.`);
   });
 
   // 处理文件点击跳转和对比展示
