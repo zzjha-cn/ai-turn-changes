@@ -15,8 +15,22 @@ If you use terminal agents interactively, this project gives you a missing layer
 ## Host differences
 
 - Trae supports the full automatic mode. It can combine terminal output, terminal state, and workspace file activity to infer turn boundaries.
-- Standard VS Code currently works best in manual mode. Its published extension host does not expose the same level of terminal output access, so the Trae-grade state detection model cannot be reproduced completely.
+- Standard VS Code currently works best in manual mode. The key difference is that published VS Code extensions cannot rely on the same terminal output stream access used by Trae for real-time terminal-state classification.
+- In this project, full automatic turn detection depends on reading terminal output so it can classify states like thinking, approval prompts, progress summaries, prompt restoration, and quiet-window fallbacks. Trae can provide that path; standard VS Code does not expose it as a normal stable capability for published extensions.
 - This is a host capability difference, not a product logic difference. The current project stance is: full-featured on Trae, stability-first on VS Code.
+
+### VS Code enhanced mode
+
+- If you are a developer and want the full terminal-aware experience in VS Code, you can explicitly enable the proposed terminal API for this extension.
+- Add `"enabledApiProposals": ["terminalDataWriteEvent"]` to the extension package if you build your own variant.
+- Launch VS Code with the proposed API enabled for this extension:
+
+```bash
+code . --enable-proposed-api seanz-hahaha.ai-turn-changes
+```
+
+- After that, the extension can attempt the same richer terminal-state detection model used on Trae.
+- If the host still does not allow it, the extension falls back gracefully to the stability-first path.
 
 ## Why this exists
 
@@ -46,6 +60,7 @@ When you run an interactive CLI agent, the extension captures the execution as a
 
 - Trae: use automatic mode with `Bind Active Terminal` for the full experience.
 - VS Code: use manual mode as the recommended path. Start a turn, let the agent work, finish the turn, then inspect the result.
+- VS Code enhanced mode: if you intentionally launch VS Code with `--enable-proposed-api seanz-hahaha.ai-turn-changes`, you can experiment with the fuller automatic mode, but the default recommendation remains manual mode for predictable behavior.
 
 ### Sidebar layout
 
