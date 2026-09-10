@@ -12,6 +12,12 @@ If you use terminal agents interactively, this project gives you a missing layer
 
 ![image](./public/dark.png)
 
+## Host differences
+
+- Trae supports the full automatic mode. It can combine terminal output, terminal state, and workspace file activity to infer turn boundaries.
+- Standard VS Code currently works best in manual mode. Its published extension host does not expose the same level of terminal output access, so the Trae-grade state detection model cannot be reproduced completely.
+- This is a host capability difference, not a product logic difference. The current project stance is: full-featured on Trae, stability-first on VS Code.
+
 ## Why this exists
 
 - `/diff` is good for the current exchange, but it does not give you durable turn history.
@@ -24,22 +30,22 @@ If you use terminal agents interactively, this project gives you a missing layer
 When you run an interactive CLI agent, the extension captures the execution as a series of turns and lets you inspect the resulting code changes inside VS Code.
 
 - Manual mode: explicitly start and finish a turn, then inspect the resulting changes.
-- Automatic mode: bind an active terminal and let the extension infer turn boundaries from terminal activity and workspace changes.
+- Automatic mode: fully available on Trae, where the extension can infer turn boundaries from terminal activity and workspace changes. On standard VS Code, this is not the primary recommended path right now.
 - Turn-oriented history: browse earlier turns instead of only the latest one.
 - Rich diff reading: open a dedicated turn diff viewer instead of relying on a plain terminal diff dump.
 
 ## How it works
 
 - Manual mode: you decide where a turn starts and ends. The extension snapshots the baseline, captures the resulting workspace state, and computes the diff.
-- Automatic mode: bind an active terminal, then let the extension observe terminal output, terminal state, and workspace file changes to infer when one AI activity segment has settled.
+- Automatic mode: bind an active terminal, then let the extension observe terminal output, terminal state, and workspace file changes to infer when one AI activity segment has settled. This full path is available on Trae; standard VS Code does not expose the same terminal output capabilities to published extensions.
 - File tracking: Git is used to determine the observable file set and respect `.gitignore` rules.
 - Snapshot storage: relevant file contents are stored as Snapshots in the extension's local storage. Snapshot lifecycle is managed with reference counting.
-- Boundary detection: automatic mode classifies terminal states such as thinking, waiting for approval, in-progress summaries, prompt restoration, and fallback quiet windows.
+- Boundary detection: on Trae, automatic mode can classify terminal states such as thinking, waiting for approval, in-progress summaries, prompt restoration, and fallback quiet windows. On standard VS Code, manual triggering is currently the stable recommendation.
 
 ## Usage
 
-- Manual mode: start a turn, let the agent work, finish the turn, inspect the result.
-- Automatic mode: bind an active terminal with `Bind Active Terminal`, switch to automatic mode, and let the extension track turns on its own.
+- Trae: use automatic mode with `Bind Active Terminal` for the full experience.
+- VS Code: use manual mode as the recommended path. Start a turn, let the agent work, finish the turn, then inspect the result.
 
 ### Sidebar layout
 

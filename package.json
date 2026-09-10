@@ -2,7 +2,7 @@
     "name": "ai-turn-changes",
     "displayName": "AI Turn Changes Visualizer",
     "description": "Visualize and browse code changes made by terminal-based AI agents like Claude or Codex, organized by turns.",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "publisher": "seanz-hahaha",
     "engines": {
         "vscode": "^1.80.0"

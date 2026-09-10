@@ -54,15 +54,21 @@ export class TerminalMonitor {
 
     // 2. 兼容性降级监听：监听终端数据的写入 (支持标准 PTY 劫持)
     // VS Code 在有权限或特定平台下可通过 onDidWriteTerminalData 稳定捕获实时字符流
-    const writeDataDisposable = (vscode.window as any).onDidWriteTerminalData?.((e: any) => {
-      const boundTerminal = this.bindingService.getBoundTerminal();
-      if (boundTerminal && e.terminal === boundTerminal) {
-        this.queueTerminalData(e.terminal, e.data);
-      }
-    });
+    const terminalWindow = vscode.window as any;
+    if (typeof terminalWindow.onDidWriteTerminalData === 'function') {
+      try {
+        const writeDataDisposable = terminalWindow.onDidWriteTerminalData((e: any) => {
+          const boundTerminal = this.bindingService.getBoundTerminal();
+          if (boundTerminal && e.terminal === boundTerminal) {
+            this.queueTerminalData(e.terminal, e.data);
+          }
+        });
 
-    if (writeDataDisposable) {
-      this.disposables.push(writeDataDisposable);
+        if (writeDataDisposable) {
+          this.disposables.push(writeDataDisposable);
+        }
+      } catch {
+      }
     }
   }
 

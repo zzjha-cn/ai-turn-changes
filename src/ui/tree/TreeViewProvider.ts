@@ -6,21 +6,39 @@ import { TerminalBindingService } from '../../core/terminal/TerminalBindingServi
 type TreeNode = SectionNode | StatusNode | ActionNode | TurnNode | TurnActionNode | FileNode;
 
 export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
-  private turnManager: TurnManager;
+  private turnManager?: TurnManager;
   private terminalBinding?: TerminalBindingService;
   private selectedRecord?: TurnRecord;
+  private placeholderMessage?: string;
 
   private onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined | void>();
   public readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
-  constructor(turnManager: TurnManager, terminalBinding?: TerminalBindingService) {
+  constructor(turnManager?: TurnManager, terminalBinding?: TerminalBindingService, placeholderMessage?: string) {
     this.turnManager = turnManager;
     this.terminalBinding = terminalBinding;
+    this.placeholderMessage = placeholderMessage;
 
+    this.turnManager?.onStateChanged(() => this.refresh());
+    if (this.terminalBinding) {
+      this.terminalBinding.onBindingChanged(() => this.refresh());
+    }
+  }
+
+  public attachServices(turnManager: TurnManager, terminalBinding?: TerminalBindingService): void {
+    this.turnManager = turnManager;
+    this.terminalBinding = terminalBinding;
+    this.placeholderMessage = undefined;
     this.turnManager.onStateChanged(() => this.refresh());
     if (this.terminalBinding) {
       this.terminalBinding.onBindingChanged(() => this.refresh());
     }
+    this.refresh();
+  }
+
+  public setPlaceholderMessage(message?: string): void {
+    this.placeholderMessage = message;
+    this.refresh();
   }
 
   public refresh(): void {
@@ -37,6 +55,12 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   public async getChildren(element?: TreeNode): Promise<TreeNode[]> {
+    if (!this.turnManager) {
+      return element
+        ? []
+        : [new StatusNode(this.placeholderMessage || 'Please open a folder to use AI Turn Changes.', 'emptyWorkspace', 'info')];
+    }
+
     if (!element) {
       return [
         new SectionNode('Session', 'sessionSection', vscode.TreeItemCollapsibleState.Expanded),
@@ -67,6 +91,9 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private getSessionNodes(): TreeNode[] {
+    if (!this.turnManager) {
+      return [new StatusNode(this.placeholderMessage || 'Please open a folder to use AI Turn Changes.', 'emptyWorkspace', 'info')];
+    }
     const mode = this.turnManager.getMode();
     const activeCandidate = this.turnManager.getActiveCandidate();
     const boundTerminal = this.terminalBinding?.getBoundTerminal();
@@ -133,6 +160,9 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private getActionNodes(): TreeNode[] {
+    if (!this.turnManager) {
+      return [new StatusNode('Open a workspace folder to enable actions.', 'emptyActions', 'info')];
+    }
     const activeCandidate = this.turnManager.getActiveCandidate();
     const mode = this.turnManager.getMode();
     const nodes: TreeNode[] = [];
@@ -161,6 +191,9 @@ export class TreeViewProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private getTurnNodes(): TreeNode[] {
+    if (!this.turnManager) {
+      return [new StatusNode('Open a workspace folder to view turn history.', 'emptyTurnsWorkspace', 'history')];
+    }
     const history = this.turnManager.getHistory();
     if (history.length === 0) {
       return [new StatusNode('No turn history found.', 'emptyTurns', 'history')];
