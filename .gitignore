@@ -1,0 +1,10 @@
+.vscode/
+node_modules/
+out/
+dist/
+*.vsix
+.DS_Store
+*.log
+.trae/
+.claude*
+.codex*
