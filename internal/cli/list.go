@@ -13,8 +13,11 @@ import (
 )
 
 type sessionJSON struct {
-	Session *store.Session `json:"session"`
-	Queue   *store.Queue   `json:"queue"`
+	Session       *store.Session  `json:"session"`
+	Queue         *store.Queue    `json:"queue"`
+	Rewind        *rewindView     `json:"rewind,omitempty"`
+	ForkedFrom    *forkedFromView `json:"forkedFrom,omitempty"`
+	PendingResume bool            `json:"pendingResume,omitempty"`
 }
 
 type listJSON struct {
@@ -25,7 +28,7 @@ type listJSON struct {
 func cmdList(args []string, out, errw io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	sessionFlag := fs.String("session", "", "session id")
-	all := fs.Bool("all", false, "list every session")
+	all := fs.Bool("all", false, "list every session, including pending rewind forks")
 	asJSON := fs.Bool("json", false, "emit JSON")
 	rootFlag := fs.String("root", "", "repository root")
 	if !parseFlags(fs, args, errw) {
@@ -49,6 +52,7 @@ func cmdList(args []string, out, errw io.Writer) int {
 		fmt.Fprintln(out, "No sessions recorded yet.")
 		return 0
 	}
+	idx := buildRewindIndex(l, sessions)
 	var selected []*store.Session
 	if *all {
 		selected = sessions
@@ -59,7 +63,9 @@ func cmdList(args []string, out, errw io.Writer) int {
 		}
 		selected = []*store.Session{s}
 	} else {
-		selected = []*store.Session{sessions[0]}
+		// Focus the current branch: follow completed rewinds from the most
+		// recently active session to its fork instead of stopping at the source.
+		selected = []*store.Session{idx.branchTip(sessions, sessions[0])}
 	}
 
 	payload := listJSON{Root: root}
@@ -69,10 +75,21 @@ func cmdList(args []string, out, errw io.Writer) int {
 			fmt.Fprintf(errw, "warning: session %s: %v\n", s.SessionID, err)
 			continue
 		}
-		if q.Rebuilt {
+		if q.Rebuilt && len(q.Turns) > 0 {
 			fmt.Fprintf(errw, "warning: session %s queue was rebuilt from items\n", s.SessionID)
 		}
-		payload.Sessions = append(payload.Sessions, sessionJSON{Session: s, Queue: q})
+		idx.rememberQueue(s.SessionID, q)
+		entry := sessionJSON{Session: s, Queue: q}
+		if op := idx.sourceFor(s); op != nil {
+			entry.Rewind = idx.sourceView(l, cfg, limits, op)
+		}
+		if op := idx.forkFor(s); op != nil {
+			entry.ForkedFrom = idx.forkedFromView(l, cfg, limits, op)
+		}
+		payload.Sessions = append(payload.Sessions, entry)
+	}
+	if *all {
+		payload.Sessions = idx.addPendingForks(l, payload.Sessions, cfg, limits)
 	}
 	if *asJSON {
 		if err := writeJSON(out, payload); err != nil {
@@ -84,26 +101,39 @@ func cmdList(args []string, out, errw io.Writer) int {
 		if i > 0 {
 			fmt.Fprintln(out)
 		}
-		printSessionTurns(out, s.Session, s.Queue)
+		printSessionTurns(out, s.Session, s.Queue, s.Rewind, s.ForkedFrom)
 	}
 	return 0
 }
 
-func printSessionTurns(out io.Writer, sess *store.Session, q *store.Queue) {
+func printSessionTurns(out io.Writer, sess *store.Session, q *store.Queue, rewind *rewindView, forkedFrom *forkedFromView) {
 	title := sess.Title
 	if title == "" {
 		title = "(untitled)"
 	}
-	fmt.Fprintf(out, "SESSION %s  %s\n", shortSession(sess.SessionID), title)
+	fmt.Fprintf(out, "SESSION %s  %s", shortSession(sess.SessionID), title)
+	if role := rewindRole(rewind, forkedFrom); role != "" {
+		fmt.Fprintf(out, "  [%s]", role)
+	}
+	fmt.Fprintln(out)
 	if sess.ActiveTurn() != "" {
 		fmt.Fprintf(out, "  active turn: %s\n", sess.ActiveTurn())
 	}
+	printRewindMarkers(out, rewind, forkedFrom)
 	if len(q.Turns) == 0 {
 		fmt.Fprintln(out, "  (no retained turns)")
 		return
 	}
 	for _, t := range q.Turns {
-		fmt.Fprintf(out, "\n[%d] %s  %s  %s\n", t.Seq, t.ShortID, t.StartedAt.Local().Format("15:04"), t.Status)
+		target := rewind != nil && rewind.TargetTurnID == t.TurnID
+		fmt.Fprintf(out, "\n[%d] %s  %s  %s", t.Seq, t.ShortID, t.StartedAt.Local().Format("15:04"), t.Status)
+		if target {
+			fmt.Fprint(out, "  [rewind target]")
+		}
+		fmt.Fprintln(out)
+		if target {
+			fmt.Fprintf(out, "     rewind %s: %s\n", rewind.Mode, rewindTurnNote(rewind))
+		}
 		if t.Display.UserText != "" {
 			fmt.Fprintf(out, "     You: %s\n", display.OneLine(t.Display.UserText))
 		}

@@ -154,6 +154,9 @@ func printRewindResult(out io.Writer, res *rewindservice.Result) {
 	}
 	if res.NewThreadID != "" {
 		fmt.Fprintf(out, "New thread:   %s (forked from %s)\n", res.NewThreadID, res.Session.ThreadID)
+		if res.NewThreadName != "" {
+			fmt.Fprintf(out, "Thread name:  %s\n", res.NewThreadName)
+		}
 		fmt.Fprintln(out)
 		fmt.Fprintf(out, "Continue with:\n  codex resume %s\n", res.NewThreadID)
 	}

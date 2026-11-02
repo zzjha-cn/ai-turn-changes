@@ -725,10 +725,11 @@ cxr rewind --session <id> --seq <n> --before --resume
 
 1. 保留原 session 和原 thread；
 2. 创建新 thread；
-3. 恢复工作区到目标 state；
-4. 输出 `codex resume <new-thread-id>`。
+3. 用 `thread/name/set` 给新 thread 设置可辨识名称，使其立即出现在 resume 列表；
+4. 恢复工作区到目标 state；
+5. 输出 `codex resume <new-thread-id>`。
 
-原 thread 不删除、不重写、不裁剪。
+原 thread 不删除、不重写、不裁剪。命名失败只产生 warning，不回滚 fork，也不阻止文件恢复。
 
 ### 12.4 In-place 模式
 
@@ -756,20 +757,21 @@ cxr rewind --session <id> --seq <n> --before --resume
 6. 写 rewind op: planned/safety_captured
 7. 临时启动 app-server
 8. thread/fork
-9. 写 rewind op: thread_forked，保存 newThreadId
-10. 按计划恢复文件
-11. 重新扫描并验证目标 manifest
-12. 写 rewind op: verified/completed
-13. 输出 resume 命令
+9. thread/name/set（best-effort；失败只记录 warning）
+10. 写 rewind op: thread_forked，保存 newThreadId/newThreadName
+11. 按计划恢复文件
+12. 重新扫描并验证目标 manifest
+13. 写 rewind op: verified/completed
+14. 输出 resume 命令
 ```
 
-如果第 8–9 步失败：
+如果第 8 步或第 10 步失败：
 
 - 不恢复文件；
 - 保留原 thread；
 - op 标记为可重试。
 
-如果第 10–11 步失败：
+如果第 11–12 步失败：
 
 - 不输出 resume 命令；
 - 使用 safety state 尝试恢复；

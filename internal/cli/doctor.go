@@ -63,19 +63,22 @@ func cmdDoctor(args []string, out, errw io.Writer) int {
 }
 
 type statusJSON struct {
-	Root          string   `json:"root"`
-	DataDir       string   `json:"dataDir"`
-	Exists        bool     `json:"exists"`
-	ConfigError   string   `json:"configError,omitempty"`
-	Sessions      int      `json:"sessions"`
-	OpenSessions  int      `json:"openSessions"`
-	RetainedTurns int      `json:"retainedTurns"`
-	ActiveTurns   int      `json:"activeTurns"`
-	IncompleteOps int      `json:"incompleteOps"`
-	States        int      `json:"states"`
-	Objects       int      `json:"objects"`
-	ObjectBytes   int64    `json:"objectBytes"`
-	QueueErrors   []string `json:"queueErrors,omitempty"`
+	Root           string      `json:"root"`
+	DataDir        string      `json:"dataDir"`
+	Exists         bool        `json:"exists"`
+	ConfigError    string      `json:"configError,omitempty"`
+	Sessions       int         `json:"sessions"`
+	OpenSessions   int         `json:"openSessions"`
+	RetainedTurns  int         `json:"retainedTurns"`
+	ActiveTurns    int         `json:"activeTurns"`
+	IncompleteOps  int         `json:"incompleteOps"`
+	Rewinds        int         `json:"rewinds"`
+	PendingResumes int         `json:"pendingResumes"`
+	LastRewind     *rewindView `json:"lastRewind,omitempty"`
+	States         int         `json:"states"`
+	Objects        int         `json:"objects"`
+	ObjectBytes    int64       `json:"objectBytes"`
+	QueueErrors    []string    `json:"queueErrors,omitempty"`
 }
 
 func cmdStatus(args []string, out, errw io.Writer) int {
@@ -109,6 +112,7 @@ func cmdStatus(args []string, out, errw io.Writer) int {
 		st.QueueErrors = append(st.QueueErrors, e.Error())
 	}
 	st.Sessions = len(sessions)
+	limits := display.Limits{MaxPromptBytes: cfg.Limits.MaxPromptBytes, MaxAssistantBytes: cfg.Limits.MaxAssistantBytes, MaxFiles: cfg.Limits.MaxDisplayFiles, MaxTextChars: cfg.Limits.MaxDisplayTextChars}
 	for _, s := range sessions {
 		if s.Open {
 			st.OpenSessions++
@@ -116,7 +120,7 @@ func cmdStatus(args []string, out, errw io.Writer) int {
 		if s.IsActive() {
 			st.ActiveTurns++
 		}
-		q, err := store.LoadQueueReadOnly(l, s.SessionID, cfg.Retention.MaxRetainedTurns, display.Limits{MaxPromptBytes: cfg.Limits.MaxPromptBytes, MaxAssistantBytes: cfg.Limits.MaxAssistantBytes, MaxFiles: cfg.Limits.MaxDisplayFiles, MaxTextChars: cfg.Limits.MaxDisplayTextChars})
+		q, err := store.LoadQueueReadOnly(l, s.SessionID, cfg.Retention.MaxRetainedTurns, limits)
 		if err != nil {
 			st.QueueErrors = append(st.QueueErrors, s.SessionID+": "+err.Error())
 			continue
@@ -125,6 +129,18 @@ func cmdStatus(args []string, out, errw io.Writer) int {
 	}
 	ops, _ := store.IncompleteOps(l)
 	st.IncompleteOps = len(ops)
+
+	idx := buildRewindIndex(l, sessions)
+	st.Rewinds = len(idx.completed)
+	for _, op := range idx.completed {
+		if op.NewThreadID != nil && !idx.hasSessionForThread(*op.NewThreadID) {
+			st.PendingResumes++
+		}
+	}
+	if last := idx.latest(); last != nil {
+		st.LastRewind = idx.sourceView(l, cfg, limits, last)
+	}
+
 	ids, _ := snapshot.ListStateIDs(l)
 	st.States = len(ids)
 	objs, bytes := objectStats(l.ObjectsDir())
@@ -146,6 +162,14 @@ func cmdStatus(args []string, out, errw io.Writer) int {
 	fmt.Fprintf(out, "Retained turns:   %d\n", st.RetainedTurns)
 	fmt.Fprintf(out, "Active turns:     %d\n", st.ActiveTurns)
 	fmt.Fprintf(out, "Incomplete ops:   %d\n", st.IncompleteOps)
+	fmt.Fprintf(out, "Rewinds:          %d", st.Rewinds)
+	if st.PendingResumes > 0 {
+		fmt.Fprintf(out, " (%d pending resume)", st.PendingResumes)
+	}
+	fmt.Fprintln(out)
+	if st.LastRewind != nil {
+		fmt.Fprintf(out, "Last rewind:      %s\n", formatRewindSummary(st.LastRewind))
+	}
 	fmt.Fprintf(out, "States:           %d\n", st.States)
 	fmt.Fprintf(out, "Objects:          %d (%s)\n", st.Objects, humanBytes(st.ObjectBytes))
 	for _, e := range st.QueueErrors {

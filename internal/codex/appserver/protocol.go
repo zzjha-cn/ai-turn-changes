@@ -139,6 +139,12 @@ type ThreadForkResult struct {
 	Thread Thread `json:"thread"`
 }
 
+// ThreadSetNameParams names a thread so it appears in the Codex resume picker.
+type ThreadSetNameParams struct {
+	ThreadID string `json:"threadId"`
+	Name     string `json:"name"`
+}
+
 // FirstUserText returns the first user message text in a turn.
 func (t Turn) FirstUserText() string {
 	for _, it := range t.Items {

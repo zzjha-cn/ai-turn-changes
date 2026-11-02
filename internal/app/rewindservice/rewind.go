@@ -23,11 +23,25 @@ type ForkRequest struct {
 	TurnID   string
 	Mode     string
 	Cwd      string
+	Name     string
+}
+
+// ForkResult reports a successful fork.
+type ForkResult struct {
+	NewThreadID string
+	Named       bool
+	Warnings    []string
 }
 
 // Forker abstracts app-server thread forking for tests.
 type Forker interface {
-	Fork(ctx context.Context, req ForkRequest) (newThreadID string, err error)
+	Fork(ctx context.Context, req ForkRequest) (ForkResult, error)
+}
+
+// ThreadNamer is implemented by forkers that can name an existing fork. It is
+// used when a retry reuses a thread created before naming was attempted.
+type ThreadNamer interface {
+	SetName(ctx context.Context, threadID, name string) error
 }
 
 // RealForker starts a temporary app-server per fork.
@@ -37,7 +51,7 @@ type RealForker struct {
 	Timeout time.Duration
 }
 
-func (f *RealForker) Fork(ctx context.Context, req ForkRequest) (string, error) {
+func (f *RealForker) Fork(ctx context.Context, req ForkRequest) (ForkResult, error) {
 	params := appserver.ThreadForkParams{ThreadID: req.ThreadID, Cwd: req.Cwd}
 	switch req.Mode {
 	case store.ModeBefore:
@@ -45,9 +59,17 @@ func (f *RealForker) Fork(ctx context.Context, req ForkRequest) (string, error) 
 	case store.ModeThrough:
 		params.LastTurnID = req.TurnID
 	default:
-		return "", fmt.Errorf("unknown rewind mode %q", req.Mode)
+		return ForkResult{}, fmt.Errorf("unknown rewind mode %q", req.Mode)
 	}
-	return appserver.Fork(ctx, appserver.Options{Binary: f.Binary, Env: f.Env, Timeout: f.Timeout}, params)
+	out, err := appserver.ForkWithName(ctx, appserver.Options{Binary: f.Binary, Env: f.Env, Timeout: f.Timeout}, params, req.Name)
+	if err != nil {
+		return ForkResult{}, err
+	}
+	return ForkResult{NewThreadID: out.ThreadID, Named: out.Named, Warnings: out.Warnings}, nil
+}
+
+func (f *RealForker) SetName(ctx context.Context, threadID, name string) error {
+	return appserver.SetThreadName(ctx, appserver.Options{Binary: f.Binary, Env: f.Env, Timeout: f.Timeout}, threadID, name)
 }
 
 // Options configures a rewind.
@@ -78,6 +100,7 @@ type Result struct {
 	Mode          string
 	TargetStateID string
 	NewThreadID   string
+	NewThreadName string
 	SafetyStateID string
 	Plan          *snapshot.Plan
 	Applied       []string
@@ -305,27 +328,52 @@ func (s *Service) Rewind(ctx context.Context, req Request) (*Result, error) {
 		}
 	}
 
+	forker := s.opts.Forker
+	if forker == nil {
+		forker = &RealForker{}
+	}
+	threadName := rewindThreadName(sess, target, mode)
+	created := false
 	if op.NewThreadID == nil || *op.NewThreadID == "" {
-		forker := s.opts.Forker
-		if forker == nil {
-			forker = &RealForker{}
-		}
-		newID, ferr := forker.Fork(ctx, ForkRequest{ThreadID: threadID(sess), TurnID: target.TurnID, Mode: mode, Cwd: l.Root})
+		forkRes, ferr := forker.Fork(ctx, ForkRequest{ThreadID: threadID(sess), TurnID: target.TurnID, Mode: mode, Cwd: l.Root, Name: threadName})
 		if ferr != nil {
 			op.Phase = journal.FailedRetryable
 			op.SetError("thread/fork failed: "+ferr.Error(), s.now())
 			_ = store.SaveRewindOp(l, op)
 			return res, fmt.Errorf("thread/fork failed before any file was changed (safe to retry with --resume): %w", ferr)
 		}
-		op.NewThreadID = &newID
-		res.NewThreadID = newID
+		op.NewThreadID = &forkRes.NewThreadID
+		res.NewThreadID = forkRes.NewThreadID
+		res.Warnings = append(res.Warnings, forkRes.Warnings...)
+		if forkRes.Named {
+			op.NewThreadName = threadName
+			res.NewThreadName = threadName
+		}
 		op.SetPhase(journal.ThreadForked, s.now())
 		if err := store.SaveRewindOp(l, op); err != nil {
 			return res, err
 		}
+		created = true
 	} else {
 		res.NewThreadID = *op.NewThreadID
+		res.NewThreadName = op.NewThreadName
 		res.Warnings = append(res.Warnings, "reusing already forked thread "+res.NewThreadID)
+	}
+	// Name reused forks that were created before naming existed or whose naming
+	// failed. New forks are named inside the same app-server process above.
+	if !created && op.NewThreadName == "" && res.NewThreadID != "" {
+		if namer, ok := forker.(ThreadNamer); ok {
+			if nerr := namer.SetName(ctx, res.NewThreadID, threadName); nerr != nil {
+				res.Warnings = append(res.Warnings, "could not name new thread "+res.NewThreadID+": "+nerr.Error())
+			} else {
+				op.NewThreadName = threadName
+				res.NewThreadName = threadName
+				op.UpdatedAt = s.now()
+				if err := store.SaveRewindOp(l, op); err != nil {
+					return res, err
+				}
+			}
+		}
 	}
 	if op.Phase == journal.Verified || op.Phase == journal.Completed {
 		if op.Phase == journal.Verified {
@@ -585,6 +633,37 @@ func threadID(sess *store.Session) string {
 		return sess.ThreadID
 	}
 	return sess.SessionID
+}
+
+// rewindThreadName builds a descriptive name for the forked thread. Codex only
+// lists named threads in some resume flows, so naming the fork right after
+// thread/fork makes it visible without a manual rename.
+func rewindThreadName(sess *store.Session, target *store.QueueTurn, mode string) string {
+	label := "before"
+	if mode == store.ModeThrough {
+		label = "through"
+	}
+	seq := int64(0)
+	if target != nil {
+		seq = target.Seq
+	}
+	suffix := fmt.Sprintf(" (rewind %s [%d])", label, seq)
+	base := ""
+	if sess != nil {
+		base = sess.Title
+	}
+	if base == "" && target != nil {
+		base = target.Display.Title
+	}
+	if base == "" {
+		base = "untitled"
+	}
+	const maxName = 100
+	maxBase := maxName - len(suffix)
+	if maxBase < 1 {
+		maxBase = 1
+	}
+	return display.TruncateUTF8(base, maxBase) + suffix
 }
 
 func mapConflicts(in []snapshot.Conflict) []store.RewindConflict {

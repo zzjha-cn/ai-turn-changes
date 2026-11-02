@@ -56,6 +56,9 @@ func TestCLIRewindBefore(t *testing.T) {
 	if !strings.Contains(out, "Rewind completed") || !strings.Contains(out, "codex resume new-thread-cli") {
 		t.Fatalf("rewind output=%s", out)
 	}
+	if !strings.Contains(out, "Thread name:  prompt 1 (rewind before [2])") {
+		t.Fatalf("rewind did not report the thread name: %s", out)
+	}
 	if got := testutil.Read(t, root, "app.txt"); got != "base\nchange 1\n" {
 		t.Fatalf("app=%q", got)
 	}
@@ -65,6 +68,9 @@ func TestCLIRewindBefore(t *testing.T) {
 	log := readOptional(os.Getenv("FAKE_LOG"))
 	if !strings.Contains(log, `"beforeTurnId":"turn-2"`) {
 		t.Fatalf("fork request log=%s", log)
+	}
+	if !strings.Contains(log, `"thread/name/set"`) || !strings.Contains(log, `"name":"prompt 1 (rewind before [2])"`) {
+		t.Fatalf("name request log=%s", log)
 	}
 }
 

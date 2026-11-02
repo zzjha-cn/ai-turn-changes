@@ -176,8 +176,26 @@ func containsKey(v any, key string) bool {
 	return false
 }
 
+// ForkOutcome reports a forked thread and whether it could be named.
+type ForkOutcome struct {
+	ThreadID string
+	Named    bool
+	Warnings []string
+}
+
 // Fork performs one thread fork through a temporary app-server and closes it.
 func Fork(ctx context.Context, opts Options, params ThreadForkParams) (string, error) {
+	out, err := ForkWithName(ctx, opts, params, "")
+	if err != nil {
+		return "", err
+	}
+	return out.ThreadID, nil
+}
+
+// ForkWithName forks a thread and, when name is non-empty, names it in the same
+// app-server process. Naming is best-effort: a failed name call is returned as a
+// warning so the fork and subsequent file restore can still succeed.
+func ForkWithName(ctx context.Context, opts Options, params ThreadForkParams, name string) (ForkOutcome, error) {
 	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -186,15 +204,39 @@ func Fork(ctx context.Context, opts Options, params ThreadForkParams) (string, e
 	defer cancel()
 	c, err := Start(callCtx, opts)
 	if err != nil {
-		return "", err
+		return ForkOutcome{}, err
 	}
 	defer c.Close()
 	res, err := c.ThreadFork(callCtx, params)
 	if err != nil {
-		return "", err
+		return ForkOutcome{}, err
 	}
 	if res == nil || res.Thread.ID == "" {
-		return "", fmt.Errorf("thread/fork returned no thread id")
+		return ForkOutcome{}, fmt.Errorf("thread/fork returned no thread id")
 	}
-	return res.Thread.ID, nil
+	out := ForkOutcome{ThreadID: res.Thread.ID}
+	if name != "" {
+		if nerr := c.ThreadSetName(callCtx, res.Thread.ID, name); nerr != nil {
+			out.Warnings = append(out.Warnings, "thread/name/set failed: "+nerr.Error())
+		} else {
+			out.Named = true
+		}
+	}
+	return out, nil
+}
+
+// SetThreadName names an existing thread through a temporary app-server.
+func SetThreadName(ctx context.Context, opts Options, threadID, name string) error {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	c, err := Start(callCtx, opts)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	return c.ThreadSetName(callCtx, threadID, name)
 }

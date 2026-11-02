@@ -63,7 +63,7 @@ func printUsage(w io.Writer) {
 
 Usage:
   cxr hook [--root DIR] [--verbose]           handle a Codex lifecycle hook on stdin
-  cxr list [--session ID] [--all] [--json]    show retained turns
+  cxr list [--session ID] [--all] [--json]    show retained turns and rewind branches
   cxr show --session ID --seq N [--json]      show one turn in detail
   cxr rewind [--last | --session ID --seq N | --session ID --turn T]
              [--before | --through] [--dry-run] [--resume] [--force]

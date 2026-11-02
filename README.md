@@ -126,13 +126,48 @@ failures are logged and never block Codex.
   is still running or a held lock.
 - `--through` on an interrupted turn without a final snapshot is rejected.
 
-Successful output includes the new thread id and the exact resume command:
+Successful output includes the new thread id, its name and the exact resume
+command:
 
 ```text
-Rewind completed: turn 3 --before
-New thread: 01a19...
+Rewind completed.
+...
+New thread:   01a1b... (forked from 01a19...)
+Thread name:  fix rewind (rewind before [3])
 Continue with:
-  codex resume 01a19...
+  codex resume 01a1b...
+```
+
+`cxr` names the fork with `thread/name/set` immediately after `thread/fork`, so
+it appears in Codex's resume picker without a manual rename. Naming is
+best-effort: if the installed Codex does not support it, the rewind still
+succeeds with a warning and you can rename the thread after resuming.
+
+### Rewind branches
+
+Rewind never trims or rewrites the source session. `cxr list` therefore shows
+the two sides of a completed rewind separately:
+
+- the source session keeps its complete retained window and is marked
+  `rewind at [N] -> new thread <id>`; the target turn is annotated as excluded
+  (`--before`) or included (`--through`) in the fork;
+- the fork session is marked `forked from <source> at [N]`;
+- until `codex resume <new-id>` runs, the fork has no `.codex-rewind` session
+  directory yet and is shown as `pending resume`.
+
+By default `cxr list` focuses the current branch: it follows a completed rewind
+from the most recently active session to its fork. If the fork has not been
+resumed, the source is shown with the pending marker. `cxr list --all` shows the
+source and fork together, including a synthetic pending-fork entry. `cxr status`
+reports the number of completed rewinds, pending resumes, and the latest rewind.
+
+```text
+SESSION 01a19abc  fix rewind  [rewind source]
+  rewind at [10] -> new thread 01a1bcd (before)
+  pending resume: codex resume 01a1bcd...
+
+[10] ...  [rewind target]
+     rewind before: excluded from new thread 01a1bcd
 ```
 
 ### Conflicts
@@ -152,7 +187,8 @@ fail closed before any file is changed.
 ### Status, doctor and JSON
 
 `cxr status` summarizes the local store: sessions, retained turns, active turns,
-incomplete operations, state/object counts and disk usage.
+incomplete operations, completed rewinds (including pending resumes), the latest
+rewind, state/object counts and disk usage.
 
 `cxr doctor` checks the data directory, queue/item consistency, missing
 snapshot objects, locks, unfinished rewinds, hook installation/trust, the Codex

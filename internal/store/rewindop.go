@@ -30,6 +30,7 @@ type RewindOp struct {
 	SafetyStateID   *string          `json:"safetyStateId"`
 	TargetStateID   string           `json:"targetStateId"`
 	NewThreadID     *string          `json:"newThreadId"`
+	NewThreadName   string           `json:"newThreadName,omitempty"`
 	Conflicts       []RewindConflict `json:"conflicts"`
 	CreatedAt       time.Time        `json:"createdAt"`
 	UpdatedAt       time.Time        `json:"updatedAt"`

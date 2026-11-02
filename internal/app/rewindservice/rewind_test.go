@@ -20,20 +20,40 @@ import (
 const sid = "sess-rewind"
 
 type fakeForker struct {
-	id    string
-	err   error
-	calls []rewindservice.ForkRequest
+	id      string
+	err     error
+	nameErr error
+	calls   []rewindservice.ForkRequest
+	names   []string
 }
 
-func (f *fakeForker) Fork(_ context.Context, req rewindservice.ForkRequest) (string, error) {
+func (f *fakeForker) Fork(_ context.Context, req rewindservice.ForkRequest) (rewindservice.ForkResult, error) {
 	f.calls = append(f.calls, req)
 	if f.err != nil {
-		return "", f.err
+		return rewindservice.ForkResult{}, f.err
 	}
-	if f.id == "" {
-		return "new-thread-test", nil
+	id := f.id
+	if id == "" {
+		id = "new-thread-test"
 	}
-	return f.id, nil
+	res := rewindservice.ForkResult{NewThreadID: id}
+	if req.Name != "" {
+		if f.nameErr != nil {
+			res.Warnings = append(res.Warnings, "thread/name/set failed: "+f.nameErr.Error())
+		} else {
+			res.Named = true
+			f.names = append(f.names, req.Name)
+		}
+	}
+	return res, nil
+}
+
+func (f *fakeForker) SetName(_ context.Context, _, name string) error {
+	if f.nameErr != nil {
+		return f.nameErr
+	}
+	f.names = append(f.names, name)
+	return nil
 }
 
 type harness struct {
@@ -369,6 +389,82 @@ func TestRewindResumeReusesForkedThread(t *testing.T) {
 	}
 	if res2.Op.Phase != journal.Completed {
 		t.Fatalf("phase=%s", res2.Op.Phase)
+	}
+}
+
+func TestRewindNamesForkedThread(t *testing.T) {
+	h := newHarness(t)
+	h.doTurn(1)
+	h.doTurn(2)
+	res, err := h.rewind(rewindservice.Request{SessionID: sid, Seq: 2, Mode: store.ModeBefore}, false, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "prompt 1 (rewind before [2])"
+	if len(h.forker.calls) != 1 || h.forker.calls[0].Name != want {
+		t.Fatalf("fork calls=%+v", h.forker.calls)
+	}
+	if res.NewThreadName != want || res.Op == nil || res.Op.NewThreadName != want {
+		t.Fatalf("result=%+v", res)
+	}
+	ops := h.ops()
+	if len(ops) != 1 || ops[0].NewThreadName != want {
+		t.Fatalf("ops=%+v", ops)
+	}
+}
+
+func TestRewindNamingFailureIsWarning(t *testing.T) {
+	h := newHarness(t)
+	h.doTurn(1)
+	h.doTurn(2)
+	h.forker.nameErr = errors.New("method not found")
+	res, err := h.rewind(rewindservice.Request{SessionID: sid, Seq: 2, Mode: store.ModeBefore}, false, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Op == nil || res.Op.NewThreadName != "" || res.NewThreadName != "" {
+		t.Fatalf("result=%+v", res)
+	}
+	if len(res.Warnings) == 0 || !strings.Contains(res.Warnings[0], "thread/name/set") {
+		t.Fatalf("warnings=%v", res.Warnings)
+	}
+}
+
+func TestRewindResumeNamesOldForkedThread(t *testing.T) {
+	h := newHarness(t)
+	for i := 1; i <= 3; i++ {
+		h.doTurn(i)
+	}
+	res, err := h.rewind(rewindservice.Request{SessionID: sid, Seq: 2, Mode: store.ModeBefore}, false, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := res.Op
+	// Simulate a crash after the fork, and an op written before naming existed.
+	op.Phase = journal.ThreadForked
+	op.NewThreadName = ""
+	op.Error = nil
+	if err := store.SaveRewindOp(store.New(h.root), op); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Write(t, h.root, "app.txt", "base\nchange 1\nchange 2\nchange 3\n")
+	testutil.Write(t, h.root, "f2.txt", "file 2\n")
+	testutil.Write(t, h.root, "f3.txt", "file 3\n")
+
+	h.forker = &fakeForker{}
+	res2, err := h.rewind(rewindservice.Request{SessionID: sid, Seq: 2, Mode: store.ModeBefore}, false, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.forker.calls) != 0 {
+		t.Fatalf("resume forked again: %+v", h.forker.calls)
+	}
+	want := "prompt 1 (rewind before [2])"
+	if len(h.forker.names) != 1 || h.forker.names[0] != want {
+		t.Fatalf("resume names=%+v", h.forker.names)
+	}
+	if res2.NewThreadName != want || res2.Op.NewThreadName != want {
+		t.Fatalf("resume result=%+v", res2)
 	}
 }
 

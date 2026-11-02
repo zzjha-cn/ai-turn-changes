@@ -45,6 +45,28 @@ if [ -n "$FAKE_PID_FILE" ]; then printf '%s\n' "$$" > "$FAKE_PID_FILE"; fi
 sleep 30
 `
 
+const fakeNameErrorServer = `#!/bin/sh
+if [ -n "$FAKE_PID_FILE" ]; then printf '%s\n' "$$" > "$FAKE_PID_FILE"; fi
+while IFS= read -r line; do
+  if [ -n "$FAKE_LOG" ]; then printf '%s\n' "$line" >> "$FAKE_LOG"; fi
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *initialize*)
+      printf '{"id":%s,"result":{"userAgent":"fake/0.164.0","codexHome":"/tmp/fake","platformOs":"test"}}\n' "$id"
+      ;;
+    *thread/fork*)
+      printf '{"id":%s,"result":{"thread":{"id":"new-1","forkedFromId":"old"}}}\n' "$id"
+      ;;
+    *thread/name/set*)
+      printf '{"id":%s,"error":{"code":-32601,"message":"method not found"}}\n' "$id"
+      ;;
+    *)
+      printf '{"id":%s,"result":{}}\n' "$id"
+      ;;
+  esac
+done
+`
+
 func writeScript(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fake-codex.sh")
@@ -128,6 +150,9 @@ func TestClientProtocolAndCleanup(t *testing.T) {
 	if err != nil || fork.Thread.ID != "new-1" {
 		t.Fatalf("fork: %+v %v", fork, err)
 	}
+	if err := c.ThreadSetName(ctx, fork.Thread.ID, "rewind before [1]"); err != nil {
+		t.Fatalf("thread/name/set: %v", err)
+	}
 	pid := readPID(t, pidFile)
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
@@ -148,6 +173,9 @@ func TestClientProtocolAndCleanup(t *testing.T) {
 	}
 	if !strings.Contains(string(requests), `"beforeTurnId":"t1"`) {
 		t.Fatalf("fork did not send beforeTurnId: %s", requests)
+	}
+	if !strings.Contains(string(requests), `"thread/name/set"`) || !strings.Contains(string(requests), `"name":"rewind before [1]"`) {
+		t.Fatalf("name was not sent: %s", requests)
 	}
 }
 
@@ -199,6 +227,48 @@ func TestStartMissingBinary(t *testing.T) {
 	_, err := Start(context.Background(), Options{Binary: filepath.Join(t.TempDir(), "nope"), Timeout: time.Second})
 	if err == nil {
 		t.Fatal("missing binary accepted")
+	}
+}
+
+func TestForkWithName(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+	logFile := filepath.Join(dir, "requests.log")
+	script := writeScript(t, fakeServer)
+	out, err := ForkWithName(context.Background(), Options{Binary: script, Env: fakeEnv(pidFile, logFile), Timeout: 10 * time.Second}, ThreadForkParams{
+		ThreadID: "old", BeforeTurnID: "t1",
+	}, "rewind before [1]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ThreadID != "new-1" || !out.Named || len(out.Warnings) != 0 {
+		t.Fatalf("outcome=%+v", out)
+	}
+	requests, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(requests), `"thread/name/set"`) || !strings.Contains(string(requests), `"name":"rewind before [1]"`) {
+		t.Fatalf("name was not sent: %s", requests)
+	}
+}
+
+func TestForkWithNameFailureKeepsFork(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+	logFile := filepath.Join(dir, "requests.log")
+	script := writeScript(t, fakeNameErrorServer)
+	out, err := ForkWithName(context.Background(), Options{Binary: script, Env: fakeEnv(pidFile, logFile), Timeout: 10 * time.Second}, ThreadForkParams{
+		ThreadID: "old", BeforeTurnID: "t1",
+	}, "rewind before [1]")
+	if err != nil {
+		t.Fatalf("naming failure should not fail the fork: %v", err)
+	}
+	if out.ThreadID != "new-1" || out.Named {
+		t.Fatalf("outcome=%+v", out)
+	}
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "thread/name/set") {
+		t.Fatalf("warnings=%v", out.Warnings)
 	}
 }
 

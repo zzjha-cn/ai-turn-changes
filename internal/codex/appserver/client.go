@@ -308,6 +308,12 @@ func (c *Client) ThreadFork(ctx context.Context, p ThreadForkParams) (*ThreadFor
 	return &out, nil
 }
 
+// ThreadSetName gives a thread a display name. Codex uses the name (and the
+// session index entry it writes) to list the thread in the resume picker.
+func (c *Client) ThreadSetName(ctx context.Context, threadID, name string) error {
+	return c.call(ctx, "thread/name/set", ThreadSetNameParams{ThreadID: threadID, Name: name}, nil)
+}
+
 // Close shuts stdin, waits briefly and kills the process if needed.
 func (c *Client) Close() error {
 	var err error
